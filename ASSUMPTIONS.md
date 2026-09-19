@@ -34,7 +34,7 @@ Una sesión puede contener múltiples pedidos.
 
 El sistema no necesita registrar cuántas personas están sentadas en una mesa.
 
-La división de una cuenta se representará mediante diferentes pagos, sin crear registros que representen a los comensales.
+La división de la cuenta se representará mediante diferentes pagos, por ejemplo "Pago 1", "Pago 2", etc., sin crear una entidad que represente a cada comensal.
 
 **Motivo:** la división de la cuenta sí es necesaria, pero conocer o registrar el número de comensales no aporta una funcionalidad requerida por el problema.
 
@@ -42,9 +42,9 @@ La división de una cuenta se representará mediante diferentes pagos, sin crear
 
 ## A-004 — Los ingredientes se manejarán mediante porciones abstractas
 
-Se asumirá que cada ingrediente posee una cantidad disponible expresada en porciones o unidades de consumo, sin especificar medidas físicas como gramos, mililitros o litros.
+Se asumirá que cada ingrediente posee una cantidad disponible expresada mediante una unidad abstracta de consumo definida por el restaurante.
 
-Por ejemplo, una preparación puede requerir 2 porciones de carne.
+Una porción no representa necesariamente una medida física única. Dependiendo del ingrediente, puede corresponder a kilogramos, mililitros, tazas, unidades u otra forma de cuantificación utilizada por el restaurante.
 
 **Motivo:** permite controlar la disponibilidad necesaria para decidir si un plato puede solicitarse sin convertir el sistema en un sistema completo de inventario.
 
@@ -52,9 +52,11 @@ Por ejemplo, una preparación puede requerir 2 porciones de carne.
 
 ## A-005 — La disponibilidad de ingredientes afecta la disponibilidad de los platos
 
-Un plato solamente podrá ser solicitado cuando los ingredientes requeridos se encuentren disponibles.
+Un plato solamente podrá ser solicitado cuando el plato esté activo y los ingredientes requeridos se encuentren activos y disponibles en cantidad suficiente.
 
-La disponibilidad podrá depender de la cantidad de porciones disponibles y de una posible desactivación manual del ingrediente.
+La disponibilidad del plato será calculada a partir de su composición actual y de las cantidades disponibles de sus ingredientes.
+
+No se almacenará un campo disponible en Plato.
 
 **Motivo:** responde directamente a la regla del enunciado que establece que un plato sin ingredientes disponibles no puede ser solicitado y debe dejar de ofrecerse.
 
@@ -90,9 +92,7 @@ Al cerrar la atención de una mesa, la cuenta incluirá el consumo de los difere
 
 La cuenta podrá dividirse en diferentes pagos.
 
-Un mismo ítem podrá distribuirse entre diferentes pagos cuando tenga una cantidad mayor a uno.
-
-**Ejemplo:** si un pedido contiene 3 hamburguesas iguales, una podrá asociarse a un pago y las otras dos a otro.
+Cada unidad solicitada se representa mediante un ÍtemPedido independiente, por lo que diferentes unidades de un mismo plato pueden asociarse a diferentes pagos.
 
 **Motivo:** permite cumplir la regla de dividir la cuenta entre varios pagos parciales sin necesidad de registrar un número real de comensales.
 
@@ -100,7 +100,7 @@ Un mismo ítem podrá distribuirse entre diferentes pagos cuando tenga una canti
 
 ## A-009 — Los pagos serán registrados, no procesados electrónicamente
 
-El sistema permitirá registrar pagos parciales y controlar cuánto queda pendiente de la cuenta.
+El sistema permitirá registrar pagos parciales y controlar qué unidades del consumo han sido asignadas a un pago.
 
 No se implementará una pasarela de pagos ni procesamiento real de dinero mediante servicios externos.
 
@@ -110,7 +110,7 @@ No se implementará una pasarela de pagos ni procesamiento real de dinero median
 
 ## A-010 — Un ítem puede cancelarse antes de iniciar su preparación
 
-Se asume que un ítem de pedido puede pasar excepcionalmente al estado `CANCELADO` mientras se encuentre en `EN_COLA`.
+Un ÍtemPedido podrá cancelarse solamente cuando su estado sea `EN_COLA.`
 
 La cancelación no forma parte del flujo normal de preparación. El flujo normal de un ítem es:
 
@@ -124,33 +124,37 @@ Una vez que el ítem entra en `EN_PREPARACION`, ya no puede ser cancelado.
 
 ## A-011 — Los ítems cancelados permanecen registrados pero no participan en la operación activa
 
-Un ítem cancelado se conservará en el sistema como parte del historial del pedido, pero no se tendrá en cuenta para determinar qué debe preparar la cocina, el estado operativo del pedido ni el valor de la cuenta.
+Los ítems cancelados no serán eliminados físicamente de la base de datos.
 
-**Motivo:** conservar el registro de la cancelación permite mantener trazabilidad sin que un ítem que ya no debe prepararse afecte las operaciones posteriores.
+Permanecerán registrados con estado `CANCELADO`, pero no participarán en la preparación pendiente ni en el cálculo de la cuenta.
+
+Si el ítem había reservado ingredientes, estos podrán ser devueltos a la disponibilidad al momento de la cancelación.
+
+**Motivo:** conservar el registro del pedido permite mantener trazabilidad sin considerar como consumo una unidad que fue cancelada.
 
 ---
 
 ## A-012 — El estado del pedido considera únicamente los ítems no cancelados
 
-El estado de un pedido se determinará considerando únicamente los ítems que no se encuentren cancelados.
+No se almacenará físicamente un campo estado en Pedido.
 
-Si existen ítems activos en diferentes estados, el estado del pedido representará el estado general de preparación de dichos ítems.
+El estado operativo del pedido se calculará a partir de los estados de sus ÍtemPedido, ignorando los ítems cancelados para determinar el avance de preparación.
 
-Cuando todos los ítems del pedido estén cancelados, el pedido pasará a `CANCELADO`.
+Si todos los ítems fueron cancelados, el pedido se considera cancelado.
 
-**Motivo:** evita que un ítem cancelado impida que el resto del pedido avance normalmente y permite representar el caso en que un pedido deja de tener preparaciones pendientes.
+Si existen ítems no cancelados, el estado se determina según su avance de preparación.
+
+**Motivo:** evita duplicar información y permite que los estados individuales de los ítems sean la única fuente de verdad sobre la preparación.
 
 ---
 
 ## A-013 — Las observaciones se registrarán a nivel de pedido
 
-Las observaciones se almacenarán en el pedido como una indicación general para la cocina.
+Las observaciones se almacenarán en `Pedido` y no en cada `ÍtemPedido`.
 
-No se registrarán observaciones independientes para cada ítem.
+No se implementará inicialmente un campo de observaciones específico para cada plato solicitado.
 
-Se asume que el restaurante establecerá un lenguaje operativo claro entre meseros y cocina para comunicar indicaciones específicas cuando sea necesario.
-
-**Motivo:** mantener las observaciones a nivel de pedido reduce la complejidad del sistema y resulta suficiente para el alcance de la prueba.
+**Motivo:** mantener el alcance controlado y evitar añadir complejidad al modelo para una funcionalidad que no es requerida explícitamente por el enunciado.
 
 ---
 
@@ -164,11 +168,7 @@ Los roles considerados serán:
 - `MESERO`
 - `COCINERO`
 
-El mesero podrá consultar los platos disponibles y enviar pedidos a cocina.
-
-El cocinero podrá consultar y actualizar el estado de preparación de los ítems.
-
-El administrador podrá realizar las operaciones de configuración necesarias para platos e ingredientes.
+El usuario `ADMIN` podrá gestionar la configuración de platos e ingredientes; el `MESERO` gestionará las sesiones y pedidos; el `COCINERO` gestionará el avance de preparación de los ítems.
 
 No se implementará un sistema avanzado de autenticación.
 
@@ -178,18 +178,74 @@ No se implementará un sistema avanzado de autenticación.
 
 ## A-015 — Se conservará la composición de ingredientes utilizada por cada ítem pedido
 
-La composición actual de un plato representa su receta vigente. Sin embargo, cuando un ítem de pedido sea enviado a cocina, se conservará la composición de ingredientes que fue utilizada para ese pedido.
+Cuando un pedido sea enviado a cocina, se registrará en `ComposiciónItemPedido` la composición de ingredientes correspondiente a
+cada unidad solicitada.
 
-Por ejemplo, si una hamburguesa requería inicialmente 2 porciones de carne y posteriormente su receta cambia a 1 porción, un pedido realizado antes del cambio conservará la composición utilizada originalmente.
+Esta información no se actualizará si posteriormente cambia la receta actual del plato.
 
-**Motivo:** permite mantener consistencia histórica y evita que modificaciones posteriores en la receta alteren la interpretación de pedidos ya realizados.
+**Motivo:** permite saber qué ingredientes fueron realmente comprometidos para un pedido concreto y facilita devolver las cantidades reservadas si un ítem se cancela.
 
 ---
 
 ## A-016 — Una sesión solo puede cerrarse cuando su cuenta está completamente pagada
 
-Una sesión permanecerá activa mientras su cuenta tenga valores pendientes de pago.
+La sesión no podrá cerrarse mientras existan unidades no canceladas de la cuenta que no hayan sido asignadas a un pago.
 
-La sesión podrá pasar a `CERRADA` únicamente cuando todas las cantidades de los ítems que deben cobrarse hayan sido completamente asignadas a pagos y la cuenta se encuentre `PAGADA`.
+La condición será validada mediante la lógica de negocio.
 
-**Motivo:** evita cerrar una atención que todavía posee consumo pendiente de pago.
+**Motivo:** evita cerrar una atención dejando consumo pendiente de pago.
+
+---
+
+## A-017 --- Cada unidad solicitada se representa como un ÍtemPedido independiente
+
+Si un cliente solicita varias unidades del mismo plato, cada unidad se almacenará como un registro independiente de `ÍtemPedido`.
+
+Por ejemplo, tres hamburguesas se representan mediante tres ítems distintos, en lugar de un solo ítem con `cantidad = 3`.
+
+La interfaz podrá agrupar visualmente unidades iguales para facilitar el trabajo de cocina.
+
+**Motivo:** permite que cada unidad avance de forma independiente por los estados de preparación y facilita su asignación individual a diferentes pagos.
+
+---
+
+## A-018 --- La cantidad requerida de ingredientes es una unidad abstracta de consumo
+
+`ComposiciónPlato.cantidad_requerida` representa la cantidad abstracta de ingrediente que requiere una unidad del plato.
+
+La unidad física concreta no será modelada por el sistema.
+
+Por ejemplo, si el restaurante define que una preparación consume dos porciones de un ingrediente, se registrará `2`, independientemente de si para ese ingrediente una porción corresponde a gramos, mililitros, tazas, unidades u otra medida definida por el restaurante.
+
+**Motivo:** permite modelar el consumo de ingredientes sin construir un sistema completo de unidades de medida e inventario.
+
+---
+
+## A-019 --- La disponibilidad de ingredientes se reserva al enviar el pedido a cocina
+
+Mientras el mesero está construyendo un pedido, los ingredientes no se descuentan.
+
+Al enviar el pedido a cocina, el sistema:
+
+1. valida nuevamente la disponibilidad de los ingredientes;
+2. registra la composición de cada `ÍtemPedido`;
+3. descuenta las cantidades correspondientes de `Ingrediente`;
+4. coloca los ítems en `EN_COLA`.
+
+Si un pedido en cola se modifica para agregar o retirar unidades, se aplicarán nuevamente las validaciones y ajustes correspondientes.
+
+**Motivo:** evita que dos operaciones basadas en información desactualizada comprometan las mismas existencias y permite representar la reserva de ingredientes sin crear una entidad adicional de inventario reservado.
+
+---
+
+## A-020 --- Los estados derivados no se almacenarán como datos independientes
+
+No se almacenarán físicamente los estados de `Pedido` ni de `Cuenta`.
+
+El estado de `Pedido` se deriva de los estados de sus ítems.
+
+El estado de `Cuenta` se deriva de la asignación de los ítems no cancelados a los pagos.
+
+En `Sesión` tampoco se almacenará un campo `estado`: una sesión se considera activa cuando `fecha_hora_fin` es `NULL` y cerrada cuando posee una fecha de finalización.
+
+**Motivo:** evitar duplicación de información y reducir la posibilidad de inconsistencias entre datos almacenados y datos derivados.

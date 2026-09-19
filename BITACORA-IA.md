@@ -1,3 +1,5 @@
+# BITACORA-IA.md
+
 ## Propósito
 
 Registrar el uso de herramientas de inteligencia artificial durante el desarrollo del proyecto, incluyendo las propuestas obtenidas, las alternativas consideradas y las decisiones tomadas por la estudiante.
@@ -68,108 +70,250 @@ Convertir las decisiones funcionales tomadas durante esta sesión en un modelo d
 
 ---
 
-## Sesión 2 — Revisión y consolidación del modelo de datos
+## Sesión 2 --- Consolidación del modelo funcional y diseño relacional
 
 ### Objetivo
 
-Revisar las decisiones tomadas durante la sesión anterior y convertirlas en un modelo de datos coherente antes de comenzar la implementación.
-
-La sesión también buscó identificar decisiones que todavía podían generar inconsistencias entre los estados de los pedidos, la preparación en cocina, la disponibilidad de ingredientes y la cuenta.
+Revisar las decisiones tomadas durante la primera sesión, resolver casos límite y transformar el modelo conceptual inicial en una estructura relacional coherente antes de seleccionar la tecnología de implementación.
 
 ### Uso de IA
 
 Se utilizó ChatGPT como herramienta de apoyo para:
 
-* Revisar las entidades y atributos definidos durante la sesión anterior.
+- Revisar las entidades y relaciones identificadas anteriormente.
+- Cuestionar si determinados datos debían almacenarse o derivarse.
+- Analizar la representación de unidades repetidas de un mismo plato.
+- Revisar la relación entre recetas actuales y pedidos históricos.
+- Explorar restricciones de integridad que podrían ser garantizadas desde la base de datos.
+- Identificar posibles inconsistencias y redundancias en el modelo.
+- Revisar el flujo de reserva y devolución de ingredientes.
+- Comprobar que el modelo permitiera cumplir la división de cuentas y pagos parciales.
 
-* Detectar decisiones pendientes o posibles contradicciones en el modelo.
+### Decisiones tomadas durante la sesión
 
-* Analizar el comportamiento de los pedidos cuando existen ítems cancelados.
+#### 1. Trazabilidad del mesero
 
-* Analizar cómo conservar la consistencia histórica cuando cambia la composición de un plato.
+Se decidió registrar el mesero responsable en `Sesion` mediante una relación con `Usuario`.
 
-* Revisar la relación entre usuarios, sesiones, pedidos, cocina y cuenta.
+La sesión tendrá:
 
-* Comprobar que las entidades propuestas fueran suficientes para cubrir las reglas del enunciado sin ampliar innecesariamente el alcance.
+mesero_id FK → Usuario.id
 
-### Proceso de decisión
+Esto permite saber quién atendió una mesa durante una sesión sin repetir el dato en cada pedido.
 
-Durante la revisión se identificaron dos decisiones que requerían una definición explícita.
+#### 2. Estado de `Pedido` derivado
 
-La primera correspondía a la cancelación de ítems. Se estableció que `CANCELADO` no forma parte del flujo normal de preparación, sino que representa una situación excepcional que solamente puede ocurrir mientras el ítem permanece en `EN_COLA`.
+Se decidió no almacenar físicamente `Pedido.estado`.
 
-La segunda correspondía a los cambios posteriores en la receta de un plato. Se consideró que utilizar siempre la composición actual podría modificar la interpretación histórica de pedidos ya realizados.
+El estado operativo del pedido se deriva de los estados de sus `ItemPedido`.
 
-A partir de esto se decidió conservar, junto al ítem pedido, la composición de ingredientes utilizada en el momento en que el pedido fue enviado a cocina.
+Esto evita tener dos fuentes de verdad que podrían quedar inconsistentes.
 
-### Decisiones tomadas
+#### 3. Estados de `ItemPedido`
 
-La estudiante decidió:
+Los estados definidos son:
 
-1. Incorporar `CANCELADO` como estado excepcional de `ÍtemPedido`.
+EN_COLA
+EN_PREPARACION
+LISTO
+CANCELADO
 
-2. Permitir la cancelación únicamente mientras el ítem se encuentre `EN_COLA`.
+El flujo normal es:
 
-3. Mantener los ítems cancelados registrados, pero excluirlos de la preparación, del estado operativo del pedido y del cálculo de la cuenta.
+EN_COLA → EN_PREPARACION → LISTO
 
-4. Considerar un pedido como `CANCELADO` cuando todos sus ítems estén cancelados.
+La cancelación solamente puede realizarse desde `EN_COLA`.
 
-5. Determinar el estado operativo de un pedido considerando únicamente sus ítems no cancelados.
+#### 4. Individualización de los ítems
 
-6. Mantener las observaciones a nivel general del pedido en lugar de crear observaciones independientes por ítem.
+Se decidió que cada unidad solicitada será un registro independiente de `ItemPedido`.
 
-7. Incorporar una entidad `Usuario` con roles básicos de `ADMIN`, `MESERO` y `COCINERO`, sin implementar autenticación avanzada.
+Por ejemplo, tres hamburguesas se representan como tres ítems, en lugar de un único ítem con `cantidad = 3`.
 
-8. Asociar el mesero responsable a la sesión de la mesa.
+La interfaz podrá agrupar visualmente unidades iguales para facilitar la operación en cocina.
 
-9. Conservar una copia de la composición de ingredientes utilizada por cada ítem cuando este sea enviado a cocina.
+### Motivo
 
-10. Permitir cerrar una sesión únicamente cuando su cuenta esté completamente pagada.
+Esta decisión permite que cada unidad tenga su propio estado de preparación y facilita asignar unidades concretas a diferentes pagos.
 
-### Modelo conceptual resultante
+#### 5. Precio histórico del pedido
 
-Como resultado de la revisión, las entidades principales consideradas para el sistema son:
+`ItemPedido` conserva `precio_unitario`, tomado del precio del `Plato` al momento de solicitarlo.
 
-* `Mesa`
+De esta forma, un cambio posterior de precio del plato no modifica el valor de pedidos anteriores.
 
-* `Usuario`
+#### 6. Composición actual del plato
 
-* `Sesion`
+Se definió `ComposicionPlato` como representación de la receta actual:
 
-* `Pedido`
+plato_id
+ingrediente_id
+cantidad_requerida
 
-* `ItemPedido`
+La cantidad requerida representa una unidad abstracta de consumo definida por el restaurante.
 
-* `Plato`
+#### 7. Fotografía de la composición del pedido
 
-* `Ingrediente`
+Se definió `ComposicionItemPedido` para conservar la composición de ingredientes comprometida para cada unidad específica del pedido.
 
-* `ComposicionPlato`
+Esto permite que una modificación posterior de la receta del plato no altere retrospectivamente la composición de un pedido ya realizado.
 
-* `ComposicionItemPedido`
+También permite saber qué cantidades deben devolverse si el ítem se cancela mientras está `EN_COLA`.
 
-* `Cuenta`
+#### 8. Momento de reserva de ingredientes
 
-* `Pago`
+Se decidió que los ingredientes no se descuentan mientras el mesero está construyendo el pedido.
 
-* `AsignacionPago`
+Al enviar el pedido a cocina:
 
-Las entidades serán revisadas nuevamente al momento de convertir el modelo conceptual en el modelo relacional y en las estructuras concretas de implementación.
+1. se valida nuevamente la disponibilidad;
+2. se registra la composición de cada ítem;
+3. se descuentan las cantidades disponibles;
+4. los ítems pasan a `EN_COLA`.
+
+Esto representa una reserva mediante la disminución de `cantidad_disponible`, sin crear una entidad separada de inventario reservado.
+
+#### 9. Cuenta asociada a la sesión
+
+Se confirmó que una `Sesion` posee una única `Cuenta` que reúne todos los pedidos de esa atención.
+
+La cuenta no almacena el total: este se calcula a partir de los `ItemPedido` no cancelados.
+
+#### 10. Estado de `Cuenta` derivado
+
+Se decidió no almacenar físicamente el estado de la cuenta.
+
+Una cuenta se considera pendiente mientras exista algún `ItemPedido` no cancelado sin asignación de pago.
+
+Se considera pagada cuando todas las unidades no canceladas han sido asignadas a pagos.
+
+#### 11. Estado de `Sesion` derivado
+
+Se decidió no almacenar `estado` en `Sesion`.
+
+La sesión se considera:
+
+ACTIVA  → fecha_hora_fin IS NULL
+CERRADA → fecha_hora_fin IS NOT NULL
+
+Antes de cerrar una sesión, la lógica de negocio deberá comprobar que la cuenta esté completamente pagada.
+
+#### 12. División de pagos
+
+Se confirmó que los pagos se registrarán mediante:
+
+Cuenta → Pago → AsignacionPago → ItemPedido
+
+No se almacena un monto independiente para `Pago`.
+
+Como cada `ItemPedido` representa una unidad, un mismo ítem individual no puede dividirse entre varios pagos.
+
+Un pago sí puede incluir unidades provenientes de diferentes pedidos de la misma cuenta.
+
+#### 13. Restricciones de integridad identificadas
+
+Se identificaron restricciones que deberán reflejarse en el modelo y, cuando la tecnología lo permita, también en la base de datos:
+
+- `ComposicionPlato(plato_id, ingrediente_id)` debe ser único.
+- `ComposicionItemPedido(item_pedido_id, ingrediente_id)` debe ser único.
+- Una `Sesion` debe tener una única `Cuenta`.
+- Una unidad de `ItemPedido` solo puede estar asignada a un `Pago`.
+- Una `Mesa` no debe tener más de una `Sesion` activa simultáneamente.
+- Las claves foráneas deberán garantizar las relaciones entre las entidades.
+
+Las transiciones de estados y las reglas que dependen de consultas entre
+varias tablas deberán controlarse principalmente mediante la lógica de
+negocio.
+
+### Modelo relacional consolidado
+
+USUARIO
+- id PK
+- nombre
+- rol
+- activo
+
+MESA
+- id PK
+- numero
+
+SESION
+- id PK
+- fecha_hora_inicio
+- fecha_hora_fin
+- mesa_id FK
+- mesero_id FK
+
+PEDIDO
+- id PK
+- fecha_hora_creacion
+- observaciones
+- sesion_id FK
+
+ITEM_PEDIDO
+- id PK
+- precio_unitario
+- estado
+- pedido_id FK
+- plato_id FK
+
+PLATO
+- id PK
+- nombre
+- precio
+- puntaje_carga_preparacion
+- activo
+
+INGREDIENTE
+- id PK
+- nombre
+- cantidad_disponible
+- activo
+
+COMPOSICION_PLATO
+- id PK
+- plato_id FK
+- ingrediente_id FK
+- cantidad_requerida
+
+COMPOSICION_ITEM_PEDIDO
+- id PK
+- item_pedido_id FK
+- ingrediente_id FK
+- cantidad
+
+CUENTA
+- id PK
+- sesion_id FK
+
+PAGO
+- id PK
+- fecha_hora
+- cuenta_id FK
+
+ASIGNACION_PAGO
+- id PK
+- pago_id FK
+- item_pedido_id FK
 
 ### Reflexión
 
-La revisión permitió comprobar que algunas decisiones que inicialmente parecían pequeños detalles podían afectar varias reglas del sistema.
+La segunda sesión permitió identificar que varias propiedades inicialmente pensadas como atributos podían derivarse de otros datos.
 
-En particular, la cancelación de un ítem debía conservarse como información histórica sin afectar la preparación ni el cobro, mientras que los cambios de una receta no debían modificar retrospectivamente pedidos que ya habían sido realizados.
+Se decidió evitar el almacenamiento redundante de los estados de `Pedido`, `Cuenta` y `Sesion`.
 
-También se confirmó la intención de mantener el alcance reducido: el modelo busca resolver las reglas planteadas por el problema sin convertirse en un sistema completo de administración de restaurantes.
+También se comprobó que individualizar las unidades de `ItemPedido` aumenta la trazabilidad y simplifica la división de la cuenta, mientras que la interfaz podrá encargarse de agrupar visualmente los ítems para no trasladar esa complejidad al usuario de cocina.
 
-### Pendiente para la siguiente sesión
+La revisión del modelo también permitió separar dos conceptos que inicialmente podían confundirse: la receta actual de un plato (`ComposicionPlato`) y la composición de ingredientes comprometida para un pedido concreto (`ComposicionItemPedido`).
 
-* Convertir el modelo conceptual en un modelo relacional.
+### Estado al cierre de la sesión
 
-* Definir claves primarias, claves foráneas y restricciones.
+El modelo relacional conceptual se considera suficientemente consolidado para pasar a la siguiente etapa.
 
-* Definir la tecnología de implementación.
+Todavía no se ha seleccionado la tecnología de backend, frontend ni base de datos.
 
-* Preparar la estructura inicial del proyecto antes de comenzar el desarrollo funcional.
+### Próxima sesión
+
+Seleccionar y justificar la tecnología de implementación, revisar alternativas y definir la estructura inicial del proyecto.
+
+La decisión tecnológica correspondiente deberá documentarse mediante un ADR.
