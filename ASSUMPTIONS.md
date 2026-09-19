@@ -34,9 +34,9 @@ Una sesión puede contener múltiples pedidos.
 
 El sistema no necesita registrar cuántas personas están sentadas en una mesa.
 
-La división de una cuenta se representará mediante grupos visuales de pago, por ejemplo "Comensal 1", "Comensal 2", etc., pero estos grupos no representan un registro real de la cantidad de personas presentes.
+La división de una cuenta se representará mediante diferentes pagos, sin crear registros que representen a los comensales.
 
-**Motivo:** la división de la cuenta sí es necesaria, pero conocer el número real de comensales no aporta una funcionalidad requerida por el problema.
+**Motivo:** la división de la cuenta sí es necesaria, pero conocer o registrar el número de comensales no aporta una funcionalidad requerida por el problema.
 
 ---
 
@@ -105,3 +105,91 @@ El sistema permitirá registrar pagos parciales y controlar cuánto queda pendie
 No se implementará una pasarela de pagos ni procesamiento real de dinero mediante servicios externos.
 
 **Motivo:** el registro de pagos es necesario para representar la división de la cuenta, mientras que los pagos reales se encuentran fuera del alcance de la prueba.
+
+---
+
+## A-010 — Un ítem puede cancelarse antes de iniciar su preparación
+
+Se asume que un ítem de pedido puede pasar excepcionalmente al estado `CANCELADO` mientras se encuentre en `EN_COLA`.
+
+La cancelación no forma parte del flujo normal de preparación. El flujo normal de un ítem es:
+
+`EN_COLA → EN_PREPARACION → LISTO`
+
+Una vez que el ítem entra en `EN_PREPARACION`, ya no puede ser cancelado.
+
+**Motivo:** permite representar la regla del enunciado que establece que un ítem solo puede cancelarse si la cocina todavía no ha comenzado su preparación.
+
+---
+
+## A-011 — Los ítems cancelados permanecen registrados pero no participan en la operación activa
+
+Un ítem cancelado se conservará en el sistema como parte del historial del pedido, pero no se tendrá en cuenta para determinar qué debe preparar la cocina, el estado operativo del pedido ni el valor de la cuenta.
+
+**Motivo:** conservar el registro de la cancelación permite mantener trazabilidad sin que un ítem que ya no debe prepararse afecte las operaciones posteriores.
+
+---
+
+## A-012 — El estado del pedido considera únicamente los ítems no cancelados
+
+El estado de un pedido se determinará considerando únicamente los ítems que no se encuentren cancelados.
+
+Si existen ítems activos en diferentes estados, el estado del pedido representará el estado general de preparación de dichos ítems.
+
+Cuando todos los ítems del pedido estén cancelados, el pedido pasará a `CANCELADO`.
+
+**Motivo:** evita que un ítem cancelado impida que el resto del pedido avance normalmente y permite representar el caso en que un pedido deja de tener preparaciones pendientes.
+
+---
+
+## A-013 — Las observaciones se registrarán a nivel de pedido
+
+Las observaciones se almacenarán en el pedido como una indicación general para la cocina.
+
+No se registrarán observaciones independientes para cada ítem.
+
+Se asume que el restaurante establecerá un lenguaje operativo claro entre meseros y cocina para comunicar indicaciones específicas cuando sea necesario.
+
+**Motivo:** mantener las observaciones a nivel de pedido reduce la complejidad del sistema y resulta suficiente para el alcance de la prueba.
+
+---
+
+## A-014 — Los usuarios tendrán roles operativos básicos
+
+El sistema contará con usuarios asociados a un rol operativo.
+
+Los roles considerados serán:
+
+- `ADMIN`
+- `MESERO`
+- `COCINERO`
+
+El mesero podrá consultar los platos disponibles y enviar pedidos a cocina.
+
+El cocinero podrá consultar y actualizar el estado de preparación de los ítems.
+
+El administrador podrá realizar las operaciones de configuración necesarias para platos e ingredientes.
+
+No se implementará un sistema avanzado de autenticación.
+
+**Motivo:** es necesario distinguir las responsabilidades de los actores principales del restaurante, pero la autenticación avanzada se encuentra fuera del alcance de la prueba.
+
+---
+
+## A-015 — Se conservará la composición de ingredientes utilizada por cada ítem pedido
+
+La composición actual de un plato representa su receta vigente. Sin embargo, cuando un ítem de pedido sea enviado a cocina, se conservará la composición de ingredientes que fue utilizada para ese pedido.
+
+Por ejemplo, si una hamburguesa requería inicialmente 2 porciones de carne y posteriormente su receta cambia a 1 porción, un pedido realizado antes del cambio conservará la composición utilizada originalmente.
+
+**Motivo:** permite mantener consistencia histórica y evita que modificaciones posteriores en la receta alteren la interpretación de pedidos ya realizados.
+
+---
+
+## A-016 — Una sesión solo puede cerrarse cuando su cuenta está completamente pagada
+
+Una sesión permanecerá activa mientras su cuenta tenga valores pendientes de pago.
+
+La sesión podrá pasar a `CERRADA` únicamente cuando todas las cantidades de los ítems que deben cobrarse hayan sido completamente asignadas a pagos y la cuenta se encuentre `PAGADA`.
+
+**Motivo:** evita cerrar una atención que todavía posee consumo pendiente de pago.
