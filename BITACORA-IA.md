@@ -317,3 +317,89 @@ Todavía no se ha seleccionado la tecnología de backend, frontend ni base de da
 Seleccionar y justificar la tecnología de implementación, revisar alternativas y definir la estructura inicial del proyecto.
 
 La decisión tecnológica correspondiente deberá documentarse mediante un ADR.
+
+---
+
+## Sesión 3 — Adopción tecnológica y modelo de datos inicial
+
+### Objetivo y uso de IA
+
+La estudiante solicitó a Codex revisar los documentos previos, comprobar
+el repositorio y el entorno, proponer un trabajo incremental e implementar
+primero la estructura ejecutable y después el modelo relacional. Codex se
+utilizó efectivamente para proponer y editar código y documentación, crear
+la migración del modelo y preparar pruebas. La estudiante confirmó el
+alcance y autorizó cada incremento; la revisión y comprensión final del
+código siguen siendo su responsabilidad.
+
+### Decisiones confirmadas por la estudiante
+
+- Adoptar un monolito modular con React, JavaScript y Vite en `frontend/`,
+  Django REST Framework en `backend/` y PostgreSQL, todo en un repositorio.
+- Usar autenticación básica de Django con los roles `ADMIN`, `MESERO` y
+  `COCINERO`, sin autenticación avanzada.
+- Construir temporalmente la selección del pedido en React y persistirla
+  únicamente al enviarla a cocina. El envío deberá ser atómico: si falta
+  algún ingrediente, se rechazará el pedido completo.
+- Rechazar pedidos vacíos y cantidades negativas; representar precios y
+  cantidades de ingredientes con decimales. Cada unidad solicitada sigue
+  siendo un `ItemPedido` independiente, por lo que el número de unidades
+  es entero.
+
+La decisión inicial de la sesión 1 de dividir cantidades de un mismo ítem
+entre pagos fue **sustituida durante la sesión 2**: desde entonces, cada
+unidad se representa como un `ItemPedido` independiente y una unidad
+individual puede asignarse a un solo pago. Se conserva el registro de la
+decisión inicial para mostrar la evolución del diseño.
+
+### Propuestas técnicas incorporadas
+
+Codex propuso separar `frontend/` y `backend/`, configurar la conexión
+local mediante variables de entorno y un archivo `.env` ignorado por Git,
+y usar la aplicación Django `restaurant` para las doce entidades del
+modelo. Para integrar la autenticación ya migrada de Django, propuso
+vincular `Usuario` uno a uno con `auth.User`; `Usuario.activo` lee
+`auth.User.is_active` y evita duplicar el valor.
+
+Se eligieron `DecimalField(max_digits=12, decimal_places=2)` para precios
+y `DecimalField(max_digits=12, decimal_places=3)` para porciones abstractas
+de ingredientes. La base incluye claves foráneas, relaciones uno a uno,
+unicidades de composiciones y asignaciones, y un índice único condicional
+que impide dos sesiones activas de la misma mesa. También contiene
+restricciones para valores no negativos o positivos, roles y estados
+válidos. Los estados de `Sesion`, `Pedido` y `Cuenta` no se almacenan.
+
+### Resultados comprobados
+
+- Django conectó con la base local `sala_fogon`; se aplicó la migración
+  `restaurant.0001_initial`. `manage.py check`, `migrate --check` y la
+  comprobación de cambios pendientes de modelos terminaron correctamente.
+- El endpoint `/api/health/` devolvió HTTP 200 y `database: ok` tanto
+  directamente desde Django como a través del proxy de Vite. React compiló
+  y Vite sirvió la página con HTTP 200.
+- La estudiante creó `test_sala_fogon`, propiedad de `sala_fogon_app`.
+  Django indicó que reutilizó esa base; las **13 pruebas estructurales**
+  de `restaurant` pasaron y la base de pruebas se conservó. Entre ellas se
+  verificaron la sesión activa única por mesa, otras unicidades, valores
+  decimales, relaciones, valores inválidos y ausencia de columnas para
+  estados derivados.
+
+### Dificultades y comprobaciones pendientes
+
+PostgreSQL exigía una contraseña local, que se introdujo sin compartirla
+en el chat ni versionarla. El rol de la aplicación no tenía `CREATEDB`,
+por lo que se creó una base de pruebas separada en pgAdmin. Vite falló
+inicialmente con `EPERM` dentro del aislamiento de comandos y funcionó
+al repetir la comprobación con acceso autorizado. Los comandos de los
+servidores de desarrollo permanecieron abiertos por su naturaleza
+persistente y generaron tarjetas de ejecución prolongada; las pruebas
+posteriores del modelo se hicieron con comandos secuenciales que
+terminan por sí solos.
+
+No se ha automatizado una prueba de la interfaz en navegador ni se ha
+verificado la instalación desde cero en otra máquina. Tampoco se han
+probado aperturas simultáneas reales de sesión ni reservas concurrentes
+de ingredientes. Los modelos de pedidos, cocina y pagos existen, pero sus
+operaciones, transiciones, controles de roles, reserva y devolución de
+ingredientes, y validaciones de cierre y pago siguen pendientes de
+implementación y prueba.

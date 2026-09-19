@@ -1,6 +1,7 @@
 # ADR-001 — Arquitectura monolítica modular y tecnologías de aplicación
 
-**Estado:** Propuesto  
+**Estado:** Aceptado en la sesión 3
+
 **Contexto de trabajo:** Sesión 2 — selección tecnológica
 
 ## Contexto
@@ -23,3 +24,22 @@ Conservar `frontend/` y `backend/` como directorios separados **dentro de un ún
 - Se asume mayor configuración inicial que con plantillas de Django; no se incorporará infraestructura de microservicios.
 
 **Pendiente de verificar:** que ambas aplicaciones puedan instalarse y ejecutarse desde cero en otra máquina siguiendo el README.
+
+## Actualización de la sesión 3
+
+La estudiante confirmó la arquitectura propuesta. El repositorio contiene
+`frontend/` con React y Vite, y `backend/` con Django REST Framework.
+Dentro del backend, `config/` reúne la configuración y el endpoint de
+salud; la aplicación `restaurant/` contiene los doce modelos del dominio,
+la migración inicial y las pruebas estructurales. La configuración de
+DRF incluye autenticación de sesión y autenticación básica de Django;
+los permisos operativos por rol aún no están implementados.
+
+El modelo conceptual `Usuario` se materializó como un registro del
+restaurante vinculado uno a uno con `auth.User`, que conserva las
+credenciales y `is_active`. En React solo se implementó la comprobación
+de salud que consulta la API; los flujos de mesero y cocina siguen
+pendientes. Se verificó que Vite sirve la página, que su proxy local
+alcanza `/api/health/` mediante HTTP y que React compila. No se hizo una
+prueba automatizada en navegador. La instalación desde cero en otra
+máquina continúa pendiente de verificar.

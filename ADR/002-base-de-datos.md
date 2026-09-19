@@ -1,6 +1,7 @@
 # ADR-002 — Selección del motor de base de datos
 
-**Estado:** Propuesto  
+**Estado:** Aceptado en la sesión 3
+
 **Contexto de trabajo:** Sesión 2 — selección tecnológica
 
 ## Contexto
@@ -24,3 +25,31 @@ Mantener en el backend las reglas que dependen de varios registros, como las tra
 - No se implementará un inventario completo ni despliegue en producción.
 
 **Pendiente de verificar:** conexión local, migraciones y pruebas de concurrencia; la elección del motor por sí sola no demuestra que las reglas ya se cumplan.
+
+## Actualización de la sesión 3
+
+La estudiante confirmó PostgreSQL. Django se conectó a la base local
+`sala_fogon` y aplicó `restaurant.0001_initial`, que crea las doce
+entidades. Se materializaron claves foráneas, la relación uno a uno entre
+sesión y cuenta, la asignación única de un pago por ítem, la unicidad de
+ingredientes por receta y por composición de ítem, y una restricción
+única condicional sobre `Sesion.mesa` cuando `fecha_hora_fin IS NULL`.
+También se restringieron precios y existencias no negativos,
+composiciones positivas, y valores válidos de rol y estado. Los estados
+derivados de sesión, pedido y cuenta no se almacenan.
+
+Los precios se representan con `DecimalField(12, 2)` y las cantidades
+abstractas de ingredientes con `DecimalField(12, 3)`. El número de
+unidades solicitadas es entero porque cada unidad se guarda como un
+`ItemPedido` separado. Las **13 pruebas estructurales** pasaron en la
+base independiente `test_sala_fogon`; incluyeron el rechazo de una
+segunda sesión activa para la misma mesa y la aceptación de una sesión
+posterior tras cerrar la primera. No se comprobó todavía una carrera
+real entre dos aperturas simultáneas.
+
+La conexión local y la migración ya fueron verificadas. Siguen
+pendientes las transacciones de reserva y devolución de ingredientes,
+las validaciones que dependen de varias tablas, y las pruebas de
+concurrencia correspondientes. La base de pruebas fue creada aparte
+porque el rol de la aplicación no tiene `CREATEDB`; las credenciales
+locales se mantienen fuera del repositorio.

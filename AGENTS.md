@@ -397,7 +397,7 @@ Los principales documentos del proyecto serán:
     artificial durante el desarrollo.
 -   `ADR/`: decisiones relevantes de arquitectura y diseño.
 
-## Estado actual del diseño
+## Estado del diseño al cierre de la sesión 2
 
 El modelo relacional conceptual ya fue revisado y consolidado antes de
 escoger la tecnología de implementación.
@@ -408,3 +408,34 @@ seleccionado.
 Antes de comenzar la implementación se deberá revisar si la tecnología
 escogida permite expresar adecuadamente las restricciones identificadas
 y documentar mediante ADR las decisiones tecnológicas relevantes.
+
+## Actualización de la sesión 3
+
+Se adoptaron React con JavaScript y Vite para `frontend/`, Django REST
+Framework para `backend/` y PostgreSQL como base de datos. El proyecto
+mantiene ambos directorios en un solo repositorio. `backend/config/`
+contiene la configuración y el endpoint de salud; `backend/restaurant/`
+contiene los modelos del dominio y sus pruebas; `frontend/src/` contiene
+la interfaz React. La arquitectura adoptada es un monolito modular, sin
+microservicios.
+
+Las doce entidades del modelo conceptual están definidas mediante el ORM
+en `restaurant/models.py`. La migración `restaurant.0001_initial` se aplicó
+a la base local. Para integrar la autenticación básica de Django,
+`Usuario` se vincula uno a uno con `auth.User`: `nombre` y `rol` se guardan
+en `Usuario`, y `activo` se obtiene de `auth.User.is_active`. Esta relación
+es un detalle técnico y no sustituye las relaciones conceptuales del
+restaurante.
+
+Ya existen restricciones de integridad para una sola sesión activa por
+mesa, una cuenta por sesión, una asignación de pago por ítem, ingredientes
+no duplicados en cada composición y valores válidos o no negativos donde
+corresponde. Los precios usan dos decimales y las cantidades abstractas de
+ingredientes usan tres. Los estados de `Sesion`, `Pedido` y `Cuenta`
+continúan sin almacenarse como columnas independientes.
+
+La verificación realizada cubre conexión local, migraciones y trece
+pruebas estructurales sobre `test_sala_fogon`. La creación y envío de
+pedidos, la reserva y devolución de ingredientes, la consulta y avance
+de cocina, el registro operativo de pagos y las validaciones de roles
+siguen pendientes de implementación y prueba.

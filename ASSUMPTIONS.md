@@ -110,7 +110,7 @@ No se implementará una pasarela de pagos ni procesamiento real de dinero median
 
 ## A-010 — Un ítem puede cancelarse antes de iniciar su preparación
 
-Un ÍtemPedido podrá cancelarse solamente cuando su estado sea `EN_COLA.`
+Un ÍtemPedido podrá cancelarse solamente cuando su estado sea `EN_COLA`.
 
 La cancelación no forma parte del flujo normal de preparación. El flujo normal de un ítem es:
 
@@ -128,7 +128,13 @@ Los ítems cancelados no serán eliminados físicamente de la base de datos.
 
 Permanecerán registrados con estado `CANCELADO`, pero no participarán en la preparación pendiente ni en el cálculo de la cuenta.
 
-Si el ítem había reservado ingredientes, estos podrán ser devueltos a la disponibilidad al momento de la cancelación.
+**Formulación inicial:** Si el ítem había reservado ingredientes, estos podrán ser devueltos a la disponibilidad al momento de la cancelación.
+
+**Precisión confirmada en la sesión 3:** si se cancela un ítem que ya
+había reservado ingredientes, las cantidades comprometidas **deberán**
+devolverse a la disponibilidad. La frase anterior refleja la formulación
+inicial; esta precisión coincide con la regla de `AGENTS.md`. La lógica
+de cancelación todavía no está implementada.
 
 **Motivo:** conservar el registro del pedido permite mantener trazabilidad sin considerar como consumo una unidad que fue cancelada.
 
@@ -205,6 +211,12 @@ Por ejemplo, tres hamburguesas se representan mediante tres ítems distintos, en
 
 La interfaz podrá agrupar visualmente unidades iguales para facilitar el trabajo de cocina.
 
+**Precisión confirmada en la sesión 3:** el número de unidades solicitadas
+es entero: cada unidad corresponde a un `ItemPedido`, sin campo decimal
+de cantidad en él. Las cantidades de ingredientes sí pueden ser
+fraccionarias y se representan con valores decimales, según A-004 y
+A-018.
+
 **Motivo:** permite que cada unidad avance de forma independiente por los estados de preparación y facilita su asignación individual a diferentes pagos.
 
 ---
@@ -233,6 +245,14 @@ Al enviar el pedido a cocina, el sistema:
 4. coloca los ítems en `EN_COLA`.
 
 Si un pedido en cola se modifica para agregar o retirar unidades, se aplicarán nuevamente las validaciones y ajustes correspondientes.
+
+**Precisiones confirmadas en la sesión 3:** no se aceptarán pedidos vacíos
+ni cantidades negativas. El envío se tratará como una sola operación: si
+falta algún ingrediente para el conjunto de unidades solicitadas, se
+rechazará el pedido completo. La selección se mantiene temporalmente
+mientras se construye y no reserva ingredientes antes del envío. Mantener
+esa selección en React es una decisión de implementación, no un nuevo
+supuesto funcional. Estas validaciones de envío aún no están implementadas.
 
 **Motivo:** evita que dos operaciones basadas en información desactualizada comprometan las mismas existencias y permite representar la reserva de ingredientes sin crear una entidad adicional de inventario reservado.
 
