@@ -1,6 +1,6 @@
 # Sala Fogón
 
-Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene la base Django REST Framework y React/Vite, la conexión con PostgreSQL y el modelo relacional. El flujo operativo de pedidos se implementará en el siguiente incremento.
+Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene Django REST Framework, React/Vite, PostgreSQL y el modelo relacional. El primer flujo permite a un mesero abrir una sesión de mesa, consultar el catálogo y enviar pedidos a cocina.
 
 ## Requisitos
 
@@ -66,7 +66,7 @@ npm install
 npm run dev
 ```
 
-Abre la dirección mostrada por Vite, normalmente <http://localhost:5173/>. La pantalla debe indicar «API y PostgreSQL conectados». Vite reenvía las peticiones `/api` al backend en `127.0.0.1:8000`; no hay que configurar CORS para este entorno local.
+Abre la dirección mostrada por Vite, normalmente <http://localhost:5173/>. Vite reenvía las peticiones `/api` al backend en `127.0.0.1:8000`; no hay que configurar CORS para este entorno local. La interfaz solicita las credenciales de un mesero, permite elegir una mesa, abrir o retomar su sesión, armar un pedido temporal y enviarlo. La contraseña no se guarda en el repositorio ni en el almacenamiento del navegador; la pestaña mantiene la autorización Basic en memoria hasta salir o recargarla. Usa este flujo únicamente en el entorno local previsto, pues HTTP Basic envía credenciales en cada petición y una instalación compartida requeriría HTTPS.
 
 Para comprobar la compilación:
 
@@ -78,7 +78,7 @@ npm run build
 ## Organización
 
 - `backend/config/`: configuración Django y comprobación de salud de la API.
-- `backend/restaurant/`: modelos relacionales del restaurante; la lógica del primer flujo se incorporará después.
+- `backend/restaurant/`: modelos relacionales, validadores de entrada, servicios transaccionales, vistas, administración de datos y pruebas.
 - `frontend/src/`: interfaz React.
 - `ADR/`, `AGENTS.md` y `ASSUMPTIONS.md`: decisiones y modelo conceptual.
 
@@ -88,7 +88,7 @@ npm run build
 
 Los precios usan `DecimalField(max_digits=12, decimal_places=2)`, para conservar centavos sin errores de coma flotante. Las cantidades abstractas de ingredientes usan `DecimalField(max_digits=12, decimal_places=3)`, que permite milésimas de porción. Esto admite precios de hasta 9.999.999.999,99 y cantidades de hasta 999.999.999,999 por registro. El backend rechaza valores negativos mediante restricciones de base de datos; las recetas y composiciones comprometidas requieren cantidades mayores que cero.
 
-La base limita a una sesión activa por mesa con una unicidad condicionada a `fecha_hora_fin IS NULL`. También garantiza una cuenta por sesión, una asignación de pago por ítem y la unicidad de ingredientes en cada receta o composición de ítem. Los estados de `Sesion`, `Pedido` y `Cuenta` no se almacenan. Las reglas entre registros, como comprobar que el mesero tiene el rol correcto o validar una transición de estado, se incorporarán a la lógica del siguiente flujo.
+La base limita a una sesión activa por mesa con una unicidad condicionada a `fecha_hora_fin IS NULL`. También garantiza una cuenta por sesión, una asignación de pago por ítem y la unicidad de ingredientes en cada receta o composición de ítem. Los estados de `Sesion`, `Pedido` y `Cuenta` no se almacenan. La apertura y el envío de pedidos validan en el backend el rol y las reglas entre registros. Las transiciones de cocina, cancelaciones y pagos continúan pendientes.
 
 Para ejecutar las pruebas estructurales sobre `test_sala_fogon`, desde la raíz del repositorio:
 
@@ -98,4 +98,26 @@ backend\.venv\Scripts\python.exe backend\manage.py test restaurant --keepdb --no
 
 Antes de ejecutarlas, comprueba que `test_sala_fogon` existe, está vacía la primera vez y pertenece a `sala_fogon_app`. El comando no usa la base principal `sala_fogon` para los datos de prueba y conserva la base de pruebas al terminar.
 
-En el siguiente incremento se incorporarán apertura de sesión, catálogo disponible, envío transaccional de pedidos, cola de cocina y avance de ítems. El registro operativo de pagos queda para una etapa posterior.
+## Datos iniciales y primer flujo
+
+El sistema no crea mesas, platos, ingredientes ni cuentas de personal automáticamente. Para probarlo desde cero, crea primero un administrador local con `backend\.venv\Scripts\python.exe backend\manage.py createsuperuser` y entra a <http://127.0.0.1:8000/admin/>. En la administración de Django:
+
+1. Crea una cuenta de acceso normal en **Usuarios** con contraseña propia e `is_active` activado; no necesita `is_staff` para trabajar como mesero.
+2. Crea su perfil en **Usuarios del restaurante**, vincúlalo a esa cuenta y asigna el rol `MESERO`.
+3. Crea una mesa, ingredientes con existencias, y platos activos con su precio y composición. Las cantidades de receta son por **una unidad** de plato; las existencias y recetas admiten tres decimales.
+
+En React, entra con la cuenta del mesero. Una mesa sin sesión activa muestra **Abrir sesión**; una sesión propia activa puede retomarse. Añade unidades enteras de platos disponibles y confirma **Enviar a cocina**. La consulta del catálogo es informativa: el backend vuelve a comprobar los datos actuales al enviar. Si el consumo conjunto excede las existencias o alguna validación falla, no se crea el pedido ni se descuenta ingrediente alguno.
+
+Los endpoints de este flujo son:
+
+| Método y ruta | Función |
+| --- | --- |
+| `GET /api/me/` | Verificar cuenta Basic y perfil `MESERO` activo. |
+| `GET /api/mesas/` | Listar mesas y su sesión activa, si existe. |
+| `POST /api/sesiones/` | Abrir sesión y cuenta con `{"mesa_id": 1}`. El mesero se toma de la autenticación. |
+| `GET /api/platos/` | Listar platos y disponibilidad calculada desde estado, receta y existencias. |
+| `POST /api/pedidos/` | Enviar `{"sesion_id": 1, "observaciones": "", "items": [{"plato_id": 1, "cantidad": 2}]}`. Cada unidad crea un `ItemPedido` en `EN_COLA`. |
+
+Las rutas del flujo requieren HTTP Basic y el rol `MESERO`. Las cantidades de `items` deben ser números enteros JSON mayores que cero y el arreglo no puede estar vacío. Los pedidos solo pueden enviarse a una sesión activa del mesero autenticado. No se ha implementado todavía la consulta de la cola de cocina, el avance o cancelación de ítems ni los pagos.
+
+La prueba `restaurant` usa explícitamente `test_sala_fogon` y reutiliza esa base con `--keepdb`; no escribe datos de prueba en `sala_fogon`. Aún quedan pendientes pruebas automatizadas de navegador y de aperturas o pedidos realmente concurrentes con conexiones independientes.

@@ -58,6 +58,8 @@ DATABASES = {
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
         "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
         "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+        # The test runner must never write test records to the main database.
+        "TEST": {"NAME": "test_sala_fogon"},
     }
 }
 

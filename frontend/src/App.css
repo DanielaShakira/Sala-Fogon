@@ -1,17 +1,27 @@
 .page {
-  margin: 3rem auto;
-  max-width: 42rem;
-  padding: 0 1.5rem;
+  margin: 2rem auto 4rem;
+  max-width: 48rem;
+  padding: 0 1rem;
 }
 
-.status {
+.panel {
   border: 1px solid #d5d8d5;
   border-radius: 0.5rem;
-  margin-top: 2rem;
+  margin-top: 1rem;
   padding: 1rem 1.5rem;
+  background: white;
 }
 
-.status h2 { margin-top: 0; }
-.loading { color: #555; }
+.panel h2 { margin-top: 0; }
+label { display: block; margin: 0.75rem 0; }
+input, select, textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 0.25rem; padding: 0.5rem; font: inherit; }
+textarea { min-height: 4rem; }
+button { padding: 0.45rem 0.75rem; font: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+.cabecera, .platos li, .controles { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.platos { list-style: none; padding: 0; }
+.platos li { border-top: 1px solid #e3e5e3; padding: 0.8rem 0; }
+.controles output { min-width: 1.5rem; text-align: center; }
+.nota, small { color: #555; }
 .ok { color: #116633; }
 .error { color: #a22626; }
