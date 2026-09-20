@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createLatestRequestGuard } from './latestRequest.js'
 import { api } from './api.js'
 import { formatCents, toCents } from './money.js'
+import { etiquetaEstado } from './etiquetas.js'
 
 export default function Cuenta({ sesionId, autorizacion, revision, alCerrar }) {
   const [cuenta, setCuenta] = useState(null)
@@ -102,7 +103,7 @@ export default function Cuenta({ sesionId, autorizacion, revision, alCerrar }) {
       {cuenta.pedidos.map((pedido) => <article className="pedido" key={pedido.id}>
         <div className="cabecera pedido-cabecera"><h3>Pedido {pedido.numero_en_sesion}</h3><small>ID global {pedido.id}</small></div>
         <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
-          <span>{item.plato} · ${item.precio_unitario} · {item.estado === 'CANCELADO' ? 'Cancelado, no facturable' : item.pago_id ? `Pagado en el pago ${item.pago_id}` : 'Pendiente'}</span>
+          <span>{item.plato} · ${item.precio_unitario} · {etiquetaEstado(item.estado)} · {item.estado === 'CANCELADO' ? 'No facturable' : item.pago_id ? `Pagado en el pago ${item.pago_id}` : 'Pendiente de pago'}</span>
           {item.facturable && !item.pago_id && <label className="seleccion-pago"><input type="checkbox" checked={seleccionados.includes(item.id)} disabled={ocupado || !cuenta.pago_habilitado} onChange={() => alternar(item.id)} />Incluir</label>}
         </li>)}</ul>
       </article>)}

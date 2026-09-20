@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api.js'
 import { createLatestRequestGuard } from './latestRequest.js'
+import { etiquetaRol } from './etiquetas.js'
 
 export default function Empleados({ autorizacion }) {
   const [empleados, setEmpleados] = useState([])
@@ -93,7 +94,7 @@ export default function Empleados({ autorizacion }) {
       {empleados.length === 0 && <p>No hay empleados registrados.</p>}
       <ul className="lista-items empleados">
         {empleados.map((empleado) => <li key={empleado.id}>
-          <span><strong>{empleado.nombre}</strong> · {empleado.username} · {empleado.rol} · {empleado.activo ? 'Activo' : 'Inactivo'}</span>
+          <span><strong>{empleado.nombre}</strong> · {empleado.username} · {etiquetaRol(empleado.rol)} · {empleado.activo ? 'Activo' : 'Inactivo'}</span>
           <button type="button" disabled={ocupado} onClick={() => cambiarEstado(empleado)}>{empleado.activo ? 'Desactivar' : 'Activar'}</button>
         </li>)}
       </ul>

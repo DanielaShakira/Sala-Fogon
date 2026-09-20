@@ -37,10 +37,10 @@ class FlujoMeseroTests(TestCase):
             nombre="Ingrediente compartido", cantidad_disponible=Decimal("5.000")
         )
         self.plato_a = Plato.objects.create(
-            nombre="Plato A", precio=Decimal("12000.50"), puntaje_carga_preparacion=1
+            nombre="Plato A", precio=Decimal("12000.50")
         )
         self.plato_b = Plato.objects.create(
-            nombre="Plato B", precio=Decimal("9000.00"), puntaje_carga_preparacion=2
+            nombre="Plato B", precio=Decimal("9000.00")
         )
         self.receta_a = ComposicionPlato.objects.create(
             plato=self.plato_a, ingrediente=self.ingrediente,

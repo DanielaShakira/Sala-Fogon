@@ -2,19 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { createLatestRequestGuard } from './latestRequest.js'
 import { api } from './api.js'
 import Cuenta from './Cuenta.jsx'
-import Empleados from './Empleados.jsx'
+import Administracion from './Administracion.jsx'
+import { etiquetaEstado } from './etiquetas.js'
 import './App.css'
 
 function basicHeader(usuario, clave) {
   const bytes = new TextEncoder().encode(`${usuario}:${clave}`)
   return `Basic ${btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))}`
-}
-
-const etiquetasPedido = {
-  EN_COLA: 'En cola',
-  EN_CURSO: 'En curso',
-  COMPLETO: 'Completo',
-  CANCELADO: 'Cancelado',
 }
 
 function Cocina({ autorizacion }) {
@@ -67,11 +61,11 @@ function Cocina({ autorizacion }) {
     {cola.length === 0 && <p>No hay ítems pendientes.</p>}
     {cola.map((pedido) => <article className="pedido" key={pedido.id}>
       <h3>Pedido {pedido.id} · Mesa {pedido.mesa_numero}</h3>
-      <p>Estado general: <strong>{etiquetasPedido[pedido.estado_general] || 'Sin ítems'}</strong></p>
+      <p>Estado general: <strong>{etiquetaEstado(pedido.estado_general)}</strong></p>
       <p>Creado: {new Date(pedido.fecha_hora_creacion).toLocaleString()}</p>
       {pedido.observaciones && <p>Observaciones: {pedido.observaciones}</p>}
       <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
-        <span>{item.plato} — {item.estado}</span>
+        <span>{item.plato} — {etiquetaEstado(item.estado)}</span>
         {item.estado === 'EN_COLA' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'iniciar')}>Iniciar</button>}
         {item.estado === 'EN_PREPARACION' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'listo')}>Marcar listo</button>}
       </li>)}</ul>
@@ -244,6 +238,18 @@ function App() {
     setOcupado(false)
   }
 
+  async function actualizarCatalogo() {
+    setOcupado(true)
+    setError('')
+    try {
+      setPlatos(await api('platos', autorizacion))
+    } catch (fallo) {
+      setError(fallo.message)
+    } finally {
+      setOcupado(false)
+    }
+  }
+
   async function cancelarItem(itemId, sesionDeLaLista) {
     if (pedidosGuard.current.current() !== sesionDeLaLista ||
         !pedidosMesa.some((pedido) => pedido.items.some((item) => item.id === itemId && item.estado === 'EN_COLA' && !item.pagado))) {
@@ -307,7 +313,7 @@ function App() {
       ) : (
         <>
           <div className="cabecera"><strong>{perfil.rol === 'COCINERO' ? 'Cocinero' : perfil.rol === 'ADMIN' ? 'Administrador' : 'Mesero'}: {perfil.nombre}</strong><button type="button" disabled={ocupado} onClick={salir}>Salir</button></div>
-          {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} /> : perfil.rol === 'ADMIN' ? <Empleados autorizacion={autorizacion} /> : <>
+          {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} /> : perfil.rol === 'ADMIN' ? <Administracion autorizacion={autorizacion} /> : <>
           <section className="panel">
             <h2>Mesa</h2>
             <label>Seleccionar mesa
@@ -322,7 +328,7 @@ function App() {
           </section>
           {sesionId && <>
             <section className="panel">
-              <h2>Platos</h2>
+              <div className="cabecera"><h2>Platos</h2><button type="button" disabled={ocupado} onClick={actualizarCatalogo}>Actualizar catálogo</button></div>
               {platos.length === 0 && <p>No hay platos registrados.</p>}
               <ul className="platos">
                 {platos.map((plato) => <li key={plato.id}>
@@ -346,9 +352,9 @@ function App() {
               {pedidosMesa.length === 0 && <p>Aún no hay pedidos en esta sesión.</p>}
               {pedidosMesa.map((pedido) => <article className="pedido" key={pedido.id}>
                 <div className="cabecera pedido-cabecera"><h3>Pedido {pedido.numero_en_sesion}</h3><small>ID global {pedido.id}</small></div>
-                <p>Estado general: <strong>{etiquetasPedido[pedido.estado_general] || 'Sin ítems'}</strong></p>
+                <p>Estado general: <strong>{etiquetaEstado(pedido.estado_general)}</strong></p>
                 <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
-                  <span>{item.plato} — {item.estado}</span>
+                  <span>{item.plato} — {etiquetaEstado(item.estado)}</span>
                   {item.estado === 'EN_COLA' && !item.pagado && <button type="button" disabled={ocupado} onClick={() => cancelarItem(item.id, sesionId)}>Cancelar</button>}
                 </li>)}</ul>
               </article>)}

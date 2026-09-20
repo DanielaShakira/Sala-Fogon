@@ -46,7 +46,7 @@ class CocinaYCancelacionTests(TestCase):
             nombre="Ingrediente histórico", cantidad_disponible=Decimal("10.000")
         )
         self.plato = Plato.objects.create(
-            nombre="Plato de cocina", precio=Decimal("10000.00"), puntaje_carga_preparacion=1
+            nombre="Plato de cocina", precio=Decimal("10000.00")
         )
         self.receta = ComposicionPlato.objects.create(
             plato=self.plato, ingrediente=self.ingrediente, cantidad_requerida=Decimal("1.250")
@@ -262,7 +262,7 @@ class CarreraCancelacionPreparacionTests(TransactionTestCase):
         sesion = Sesion.objects.create(mesa=mesa, mesero=mesero)
         Cuenta.objects.create(sesion=sesion)
         pedido = Pedido.objects.create(sesion=sesion)
-        plato = Plato.objects.create(nombre="Plato", precio=Decimal("1.00"), puntaje_carga_preparacion=1)
+        plato = Plato.objects.create(nombre="Plato", precio=Decimal("1.00"))
         self.ingrediente = Ingrediente.objects.create(
             nombre="Ingrediente", cantidad_disponible=Decimal("3.750")
         )

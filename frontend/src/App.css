@@ -31,6 +31,19 @@ button:disabled { cursor: not-allowed; }
 .lista-items li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0; border-top: 1px solid #eeeeee; }
 .empleados li span { min-width: 0; overflow-wrap: anywhere; }
 .empleados li button { flex-shrink: 0; }
+.pestanas, .formulario-en-linea, .fila-receta, .config-acciones { display: flex; align-items: end; gap: 0.75rem; flex-wrap: wrap; }
+.pestanas { margin-top: 1rem; }
+.pestanas button[aria-pressed="true"] { font-weight: 700; border-color: #116633; }
+.formulario-en-linea label, .fila-receta label { flex: 1 1 9rem; }
+.formulario-en-linea input { min-width: 7rem; }
+.config-fila { align-items: start !important; flex-wrap: wrap; }
+.config-fila > div { min-width: 0; }
+.config-acciones { flex: 1 1 18rem; justify-content: flex-end; }
+.config-acciones form { flex: 1 1 12rem; }
+.editor-plato { border-top: 1px solid #e3e5e3; padding-top: 1rem; }
+.casilla { display: flex; align-items: center; gap: 0.4rem; }
+.casilla input { width: auto; margin: 0; }
+.fila-receta { border-top: 1px solid #eeeeee; padding: 0.5rem 0; }
 .seleccion-pago { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; white-space: nowrap; }
 .seleccion-pago input { width: auto; margin: 0; }
 .nota, small { color: #555; }

@@ -197,7 +197,6 @@ Plato
 - id
 - nombre
 - precio
-- puntaje_carga_preparacion
 - activo
 ```
 
@@ -469,3 +468,12 @@ Continúan pendientes la verificación de instalación desde cero en otra
 máquina y una prueba automatizada de la interfaz en navegador. Los
 apartados iniciales de los ADR conservan el estado de la primera etapa
 de la sesión 3; este apartado describe el estado funcional posterior.
+
+## Ajuste posterior de alcance en la sesión 3
+
+La estudiante decidió retirar `Plato.puntaje_carga_preparacion` y no
+implementar una recomendación de cantidad de cocineros. La propuesta
+inicial de carga de preparación queda como antecedente histórico en
+`ASSUMPTIONS.md` y `BITACORA-IA.md`, sustituida por A-023. El modelo
+actual no asigna cocineros ni calcula puntajes de preparación. Las
+transiciones independientes y el orden de la cola de cocina no cambian.

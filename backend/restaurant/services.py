@@ -1,7 +1,6 @@
 """Transactional operations for sessions, orders and payments."""
 
 from collections import defaultdict
-from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
@@ -20,6 +19,7 @@ from .models import (
     Sesion,
     Usuario,
 )
+from .disponibilidad import problema_disponibilidad
 
 
 class Conflicto(APIException):
@@ -78,27 +78,28 @@ def enviar_pedido(datos, mesero):
         }
         if len(platos) != len(cantidades):
             raise ValidationError({"items": "Uno o más platos no existen."})
-        if any(not plato.activo for plato in platos.values()):
-            raise Conflicto("Uno o más platos están inactivos.")
-
         recetas = defaultdict(list)
-        requeridas = defaultdict(lambda: Decimal("0"))
+        ingrediente_ids = set()
         for fila in ComposicionPlato.objects.select_for_update().filter(
             plato_id__in=platos
         ).order_by("plato_id", "ingrediente_id"):
             recetas[fila.plato_id].append(fila)
-            requeridas[fila.ingrediente_id] += fila.cantidad_requerida * cantidades[fila.plato_id]
+            ingrediente_ids.add(fila.ingrediente_id)
 
         ingredientes = {
             ingrediente.id: ingrediente
             for ingrediente in Ingrediente.objects.select_for_update().filter(
-                pk__in=requeridas
+                pk__in=ingrediente_ids
             ).order_by("pk")
         }
-        for ingrediente_id, cantidad in requeridas.items():
-            ingrediente = ingredientes[ingrediente_id]
-            if not ingrediente.activo or ingrediente.cantidad_disponible < cantidad:
-                raise Conflicto(f"Existencia insuficiente del ingrediente {ingrediente.nombre}.")
+        problema, requeridas = problema_disponibilidad(platos, recetas, ingredientes, cantidades)
+        if problema:
+            causa, objeto = problema
+            if causa == "plato_inactivo":
+                raise Conflicto(f"El plato {objeto.nombre} está inactivo.")
+            if causa == "ingrediente_inactivo":
+                raise Conflicto(f"El ingrediente {objeto.nombre} está inactivo.")
+            raise Conflicto(f"Existencia insuficiente del ingrediente {objeto.nombre}.")
 
         pedido = Pedido.objects.create(
             sesion=sesion,

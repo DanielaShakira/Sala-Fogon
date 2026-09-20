@@ -66,7 +66,7 @@ npm install
 npm run dev
 ```
 
-Abre la dirección mostrada por Vite, normalmente <http://localhost:5173/>. Vite reenvía las peticiones `/api` al backend en `127.0.0.1:8000`; no hay que configurar CORS para este entorno local. La interfaz ofrece vistas según el rol: ADMIN gestiona empleados, MESERO atiende mesas y COCINERO prepara pedidos. La contraseña no se guarda en el repositorio ni en el almacenamiento del navegador; la pestaña mantiene la autorización Basic en memoria hasta salir o recargarla. Usa este flujo únicamente en el entorno local previsto, pues HTTP Basic envía credenciales en cada petición y una instalación compartida requeriría HTTPS.
+Abre la dirección mostrada por Vite, normalmente <http://localhost:5173/>. Vite reenvía las peticiones `/api` al backend en `127.0.0.1:8000`; no hay que configurar CORS para este entorno local. La interfaz ofrece vistas según el rol: ADMIN gestiona empleados, mesas y catálogo; MESERO atiende mesas y COCINERO prepara pedidos. La contraseña no se guarda en el repositorio ni en el almacenamiento del navegador; la pestaña mantiene la autorización Basic en memoria hasta salir o recargarla. Usa este flujo únicamente en el entorno local previsto, pues HTTP Basic envía credenciales en cada petición y una instalación compartida requeriría HTTPS.
 
 Para comprobar la compilación:
 
@@ -75,7 +75,7 @@ cd frontend
 npm run build
 ```
 
-Para comprobar la protección que descarta respuestas antiguas al cambiar de sesión o actualizar pedidos y el cálculo de importes en React, ejecuta `npm test` dentro de `frontend/`. Utiliza el runner incluido en Node.js; no instala dependencias adicionales.
+Para comprobar la protección que descarta respuestas antiguas, el cálculo de importes y las etiquetas legibles de estados en React, ejecuta `npm test` dentro de `frontend/`. Utiliza el runner incluido en Node.js; no instala dependencias adicionales.
 
 ## Organización
 
@@ -86,7 +86,7 @@ Para comprobar la protección que descarta respuestas antiguas al cambiar de ses
 
 ## Modelo de datos
 
-`restaurant/models.py` define las doce entidades del modelo conceptual. Django conserva el nombre y rol del restaurante en `Usuario` y gestiona las credenciales en su modelo `auth.User`, unido uno a uno con `Usuario`. La propiedad `Usuario.activo` lee `auth.User.is_active`, de modo que la actividad no se almacena dos veces. Los campos adicionales de `auth.User`, como `username` y el hash de contraseña, son soporte de autenticación y no representan nuevas entidades del negocio.
+`restaurant/models.py` define las doce entidades del modelo conceptual. Django conserva el nombre y rol del restaurante en `Usuario` y gestiona las credenciales en su modelo `auth.User`, unido uno a uno con `Usuario`. La propiedad `Usuario.activo` lee `auth.User.is_active`, de modo que la actividad no se almacena dos veces. Los campos adicionales de `auth.User`, como `username` y el hash de contraseña, son soporte de autenticación y no representan nuevas entidades del negocio. La migración `restaurant.0002` retira el puntaje de carga de `Plato`; no se calcula recomendación de cocineros.
 
 Los precios usan `DecimalField(max_digits=12, decimal_places=2)`, para conservar centavos sin errores de coma flotante. Las cantidades abstractas de ingredientes usan `DecimalField(max_digits=12, decimal_places=3)`, que permite milésimas de porción. Esto admite precios de hasta 9.999.999.999,99 y cantidades de hasta 999.999.999,999 por registro. El backend rechaza valores negativos mediante restricciones de base de datos; las recetas y composiciones comprometidas requieren cantidades mayores que cero.
 
@@ -118,12 +118,29 @@ En React, entra con la cuenta ADMIN para crear empleados con rol `MESERO` o `COC
 | `POST /api/empleados/` | `ADMIN` | Crear cuenta y perfil con `username`, `nombre`, `password` y `rol` (`MESERO` o `COCINERO`). |
 | `PATCH /api/empleados/<id>/` | `ADMIN` | Activar o desactivar con `{"activo": true}` o `{"activo": false}`. |
 
+## Configuración operativa del restaurante
+
+En React, ADMIN puede crear mesas, crear ingredientes, activar o desactivar ingredientes, ajustar sus existencias y crear o editar platos con sus recetas. Las cantidades de ingredientes son porciones abstractas con tres decimales; cada cantidad de receta corresponde a **una unidad** del plato. El ajuste de existencias establece una **nueva cantidad total**: envía también la cantidad vista antes del ajuste. Si un pedido la cambió entretanto, la API devuelve HTTP 409 y el administrador debe revisar el valor actualizado antes de reintentar.
+
+La disponibilidad se calcula desde `Plato.activo`, los ingredientes activos de la receta y las existencias requeridas. Desactivar un ingrediente no desactiva el plato ni modifica pedidos anteriores. La edición de una receta reemplaza solo su composición actual; los ítems ya enviados conservan su precio y composición históricos. El mesero puede pulsar **Actualizar catálogo** para ver los cambios sin salir de la sesión; al enviar, el backend vuelve a validar el pedido completo.
+
+| Método y ruta | Función para `ADMIN` |
+| --- | --- |
+| `GET/POST /api/configuracion/mesas/` | Consultar y crear mesas con número único. |
+| `GET/POST /api/configuracion/ingredientes/` | Consultar y crear ingredientes. |
+| `PATCH /api/configuracion/ingredientes/<id>/estado/` | Activar o desactivar con `{"activo": true/false}`. |
+| `POST /api/configuracion/ingredientes/<id>/ajustar/` | Establecer existencias con `{"cantidad_esperada": "5.000", "cantidad_nueva": "8.000"}`. |
+| `GET/POST /api/configuracion/platos/` | Consultar y crear platos con su receta. |
+| `PUT /api/configuracion/platos/<id>/` | Actualizar nombre, precio, estado activo y receta completa. |
+
+La receta se envía como `"composicion": [{"ingrediente_id": 1, "cantidad_requerida": "1.250"}]`. No se permite repetir un ingrediente dentro de la misma receta. La configuración no incluye eliminación de mesas, proveedores, compras ni movimientos históricos de inventario.
+
 ## Datos iniciales y flujo del mesero
 
-El sistema no crea mesas, platos ni ingredientes automáticamente. Para cargarlos desde cero, crea un superusuario **técnico** con `backend\.venv\Scripts\python.exe backend\manage.py createsuperuser` y entra a <http://127.0.0.1:8000/admin/>. Después:
+El sistema no crea mesas, platos ni ingredientes automáticamente. Para configurarlos desde cero:
 
-1. En Django Admin, crea una mesa, ingredientes con existencias, y platos activos con su precio y composición. Las cantidades de receta son por **una unidad** de plato; las existencias y recetas admiten tres decimales.
-2. Crea la cuenta ADMIN inicial con el comando anterior y entra en React para dar de alta al mesero y al cocinero. Si ya creaste cuentas y perfiles manualmente, consérvalos: aparecerán en la lista de empleados.
+1. Crea la cuenta ADMIN inicial con el comando anterior. Si ya existe, utiliza esa cuenta.
+2. Entra en React como ADMIN para crear mesas, ingredientes, platos y recetas, además de las cuentas de mesero y cocinero. Si ya creaste datos o empleados manualmente, consérvalos: aparecerán en las listas correspondientes.
 
 En React, entra con la cuenta del mesero. Una mesa sin sesión activa muestra **Abrir sesión**; una sesión propia activa puede retomarse. Añade unidades enteras de platos disponibles y confirma **Enviar a cocina**. La consulta del catálogo es informativa: el backend vuelve a comprobar los datos actuales al enviar. Si el consumo conjunto excede las existencias o alguna validación falla, no se crea el pedido ni se descuenta ingrediente alguno.
 
@@ -146,6 +163,8 @@ El ADMIN puede crear la cuenta de COCINERO desde React. Entra con las credencial
 El mesero ve todos los pedidos de la sesión seleccionada, incluidos los completados y cancelados. Se muestran como **Pedido 1**, **Pedido 2**, etc., según fecha de creación e ID dentro de esa sesión; el ID global permanece pequeño a la derecha para identificar el registro real. Puede pulsar **Actualizar** y cancelar una unidad que aún aparezca en `EN_COLA` y no esté asignada a un pago. Al cambiar de mesa se vacía la lista anterior y se ignoran las respuestas de consultas antiguas. El backend vuelve a comprobar el estado y la asignación de pago: si cocina la inició entretanto o el ítem ya fue pagado, rechaza la cancelación con HTTP 409. Una cancelación aceptada conserva el ítem en `CANCELADO` y devuelve las cantidades registradas en su composición histórica, incluso si la receta actual del plato ha cambiado. Una segunda cancelación devuelve HTTP 409 y no repite la devolución.
 
 El estado general se **calcula al consultar**, sin columna adicional en `Pedido`: `CANCELADO` si todos los ítems están cancelados, `COMPLETO` si todos los no cancelados están listos, `EN_COLA` si todos los no cancelados siguen en cola y `EN_CURSO` para los demás avances parciales. Mesero y cocina muestran ese resumen junto con los estados individuales. Cocina conserva el ID global y solo muestra pedidos con ítems `EN_COLA` o `EN_PREPARACION`; por eso un pedido completamente listo o cancelado desaparece de su cola, pero sigue visible en la lista de su sesión para el mesero.
+
+React muestra etiquetas legibles como **EN COLA**, **EN PREPARACIÓN** y **EN CURSO**; la API y las transiciones siguen utilizando sus códigos internos. La cola se ordena por antigüedad, sin asignación ni recomendación de cocineros.
 
 | Método y ruta | Rol | Función |
 | --- | --- | --- |

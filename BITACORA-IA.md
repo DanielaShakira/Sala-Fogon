@@ -499,3 +499,37 @@ los IDs permanecen en la API y como claves internas para conservar las
 operaciones independientes. Las cuatro pruebas JavaScript y la
 compilación de React volvieron a pasar tras el ajuste. Este cambio de
 presentación no modificó el modelo relacional ni las reglas de negocio.
+
+### Ajuste posterior: retirar la carga de preparación
+
+La estudiante pidió estudiar una recomendación configurable de cocineros
+basada en `Plato.puntaje_carga_preparacion`. Codex comprobó que el
+puntaje solo estaba en `Plato`, no en el historial de `ItemPedido`, y
+propuso como alternativa mínima una tabla de umbrales persistentes para
+que ADMIN definiera rangos sin solapamientos. También explicó que una
+edición del puntaje recalcularía pedidos anteriores si no se añadía un
+campo histórico. **Esa tabla y la recomendación no se implementaron.**
+
+La estudiante reconsideró el alcance y decidió retirar el puntaje en
+vez de crear reglas de recomendación. Codex eliminó el campo del modelo,
+la API de configuración, el formulario React y Django Admin, y creó la
+migración `restaurant.0002_remove_plato_puntaje_carga_preparacion` sin
+reescribir `0001_initial`. La migración elimina los puntajes guardados
+en `Plato`; no modifica precios, recetas ni ítems históricos. A-006 se
+conserva como decisión original y A-023 registra que fue sustituida.
+
+Como mejora visual independiente, Codex centralizó las etiquetas de
+estados de ítems y pedidos en React: por ejemplo, `EN_PREPARACION` se
+muestra como «EN PREPARACIÓN». Los códigos internos de la API y las
+transiciones de cocina no cambiaron; los roles del listado de empleados
+también se presentan con nombres legibles.
+
+La suite completa terminó con **78 pruebas Django aprobadas** sobre
+`test_sala_fogon`, incluida una comprobación de que el puntaje ya no
+existe como columna ni se devuelve al crear un plato. Pasaron **6
+pruebas JavaScript**, `manage.py check`, la comprobación de que no hay
+cambios de modelo sin migración y la compilación React. La migración
+`0002` se aplicó a la base principal y `migrate --check` no encontró
+migraciones pendientes. La nueva presentación aún no se ha comprobado
+manualmente en el navegador; no se realizaron commits ni publicaciones
+en esta intervención.

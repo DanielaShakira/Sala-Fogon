@@ -28,5 +28,5 @@ class ComposicionPlatoInline(admin.TabularInline):
 
 @admin.register(Plato)
 class PlatoAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "precio", "activo", "puntaje_carga_preparacion")
+    list_display = ("nombre", "precio", "activo")
     inlines = [ComposicionPlatoInline]

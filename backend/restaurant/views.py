@@ -10,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .disponibilidad import plato_disponible
 from .models import AsignacionPago, Cuenta, ItemPedido, Mesa, Pago, Pedido, Plato, Sesion, Usuario
 from .personal import cambiar_estado_empleado, crear_cuenta_personal
 from .serializers import (
@@ -140,11 +141,7 @@ class PlatosView(VistaMesero):
                 "id": plato.id,
                 "nombre": plato.nombre,
                 "precio": str(plato.precio),
-                "disponible": plato.activo and all(
-                    fila.ingrediente.activo
-                    and fila.ingrediente.cantidad_disponible >= fila.cantidad_requerida
-                    for fila in plato.composicion.all()
-                ),
+                "disponible": plato_disponible(plato),
             }
             for plato in platos
         ])

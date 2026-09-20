@@ -67,7 +67,6 @@ class Sesion(models.Model):
 class Plato(models.Model):
     nombre = models.CharField(max_length=150)
     precio = models.DecimalField(max_digits=PRICE_DIGITS, decimal_places=PRICE_DECIMALS)
-    puntaje_carga_preparacion = models.PositiveIntegerField()
     activo = models.BooleanField(default=True)
 
     class Meta:

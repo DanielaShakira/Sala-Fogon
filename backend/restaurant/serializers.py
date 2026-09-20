@@ -1,12 +1,14 @@
 """Input validation; database-dependent rules live in services."""
 
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import Usuario
+from .models import PRICE_DECIMALS, PRICE_DIGITS, QUANTITY_DECIMALS, QUANTITY_DIGITS, Usuario
 
 
 class EnteroPositivoEstricto(serializers.IntegerField):
@@ -80,3 +82,54 @@ class NuevoEmpleadoSerializer(CamposConocidosSerializer):
 
 class EstadoEmpleadoSerializer(CamposConocidosSerializer):
     activo = serializers.BooleanField()
+
+
+class CrearMesaSerializer(CamposConocidosSerializer):
+    numero = EnteroPositivoEstricto(min_value=1, max_value=2147483647)
+
+
+class CrearIngredienteSerializer(CamposConocidosSerializer):
+    nombre = serializers.CharField(max_length=150)
+    cantidad_disponible = serializers.DecimalField(
+        max_digits=QUANTITY_DIGITS, decimal_places=QUANTITY_DECIMALS,
+        min_value=Decimal("0"),
+    )
+    activo = serializers.BooleanField(required=False, default=True)
+
+
+class EstadoIngredienteSerializer(CamposConocidosSerializer):
+    activo = serializers.BooleanField()
+
+
+class AjusteExistenciasSerializer(CamposConocidosSerializer):
+    cantidad_esperada = serializers.DecimalField(
+        max_digits=QUANTITY_DIGITS, decimal_places=QUANTITY_DECIMALS,
+        min_value=Decimal("0"),
+    )
+    cantidad_nueva = serializers.DecimalField(
+        max_digits=QUANTITY_DIGITS, decimal_places=QUANTITY_DECIMALS,
+        min_value=Decimal("0"),
+    )
+
+
+class ComposicionRecetaSerializer(CamposConocidosSerializer):
+    ingrediente_id = EnteroPositivoEstricto(min_value=1, max_value=9223372036854775807)
+    cantidad_requerida = serializers.DecimalField(
+        max_digits=QUANTITY_DIGITS, decimal_places=QUANTITY_DECIMALS,
+        min_value=Decimal("0.001"),
+    )
+
+
+class ConfigurarPlatoSerializer(CamposConocidosSerializer):
+    nombre = serializers.CharField(max_length=150)
+    precio = serializers.DecimalField(
+        max_digits=PRICE_DIGITS, decimal_places=PRICE_DECIMALS, min_value=Decimal("0")
+    )
+    activo = serializers.BooleanField()
+    composicion = ComposicionRecetaSerializer(many=True, allow_empty=True)
+
+    def validate_composicion(self, filas):
+        ids = [fila["ingrediente_id"] for fila in filas]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError("No repitas un ingrediente en la receta.")
+        return filas

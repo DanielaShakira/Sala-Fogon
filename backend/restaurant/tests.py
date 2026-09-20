@@ -40,7 +40,6 @@ class RelationalModelTests(TestCase):
         cls.plato = Plato.objects.create(
             nombre="Plato de prueba",
             precio=Decimal("15000.50"),
-            puntaje_carga_preparacion=2,
         )
         cls.ingrediente = Ingrediente.objects.create(
             nombre="Ingrediente de prueba",
@@ -130,7 +129,6 @@ class RelationalModelTests(TestCase):
             Plato.objects.create(
                 nombre="Negativo",
                 precio=Decimal("-0.01"),
-                puntaje_carga_preparacion=1,
             )
 
     def test_database_rejects_zero_recipe_quantity_and_invalid_state(self):

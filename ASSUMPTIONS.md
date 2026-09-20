@@ -64,6 +64,9 @@ No se almacenará un campo disponible en Plato.
 
 ## A-006 — La complejidad representa carga de preparación
 
+**Estado posterior:** sustituida durante la sesión 3 por A-023. Se
+conserva el texto siguiente para documentar la decisión original.
+
 Cada preparación podrá tener un puntaje interno de carga de preparación.
 
 Este valor no pretende representar una medida objetiva de dificultad culinaria, sino una referencia utilizada por el sistema para estimar la carga asociada a un pedido.
@@ -305,3 +308,21 @@ contemplan anulaciones de pagos.
 
 **Motivo:** evita dejar un pago asociado a un consumo cancelado cuyo
 importe ya no formaría parte de la cuenta.
+
+---
+
+## A-023 — Se retira el puntaje de carga y la recomendación de cocineros
+
+Durante la sesión 3 se reconsideró A-006. La estudiante decidió que el
+restaurante no registrará un puntaje de carga por plato ni calculará una
+recomendación de cantidad de cocineros por pedido. A-006 conserva la
+decisión inicial como historial, pero esta suposición posterior la
+sustituye para el funcionamiento vigente.
+
+La cola de cocina sigue ordenada por antigüedad y cada `ItemPedido`
+conserva sus transiciones independientes. No se asignan cocineros a
+pedidos ni se introduce una configuración de rangos de carga.
+
+**Motivo:** concentrar el alcance en pedidos, disponibilidad, cocina y
+cuentas, evitando una métrica cuya interpretación requeriría reglas
+adicionales del restaurante.
