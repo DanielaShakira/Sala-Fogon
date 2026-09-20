@@ -56,20 +56,19 @@ function Cocina({ autorizacion }) {
     }
   }
 
-  return <section className="panel">
-    <div className="cabecera"><h2>Cola de cocina</h2><button type="button" disabled={ocupado} onClick={refrescar}>Actualizar</button></div>
-    {cola.length === 0 && <p>No hay ítems pendientes.</p>}
-    {cola.map((pedido) => <article className="pedido" key={pedido.id}>
-      <h3>Pedido {pedido.id} · Mesa {pedido.mesa_numero}</h3>
-      <p>Estado general: <strong>{etiquetaEstado(pedido.estado_general)}</strong></p>
-      <p>Creado: {new Date(pedido.fecha_hora_creacion).toLocaleString()}</p>
-      {pedido.observaciones && <p>Observaciones: {pedido.observaciones}</p>}
-      <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
-        <span>{item.plato} — {etiquetaEstado(item.estado)}</span>
-        {item.estado === 'EN_COLA' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'iniciar')}>Iniciar</button>}
-        {item.estado === 'EN_PREPARACION' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'listo')}>Marcar listo</button>}
+  return <section className="workspace-section">
+    <div className="section-heading"><div><span className="eyebrow">Preparación</span><h2>Cola de cocina</h2><p>Pedidos pendientes, del más antiguo al más reciente.</p></div><button className="button button-secondary" type="button" disabled={ocupado} onClick={refrescar}>Actualizar cola</button></div>
+    {cola.length === 0 && <div className="empty-state"><strong>La cola está al día</strong><p>No hay ítems pendientes de preparación.</p></div>}
+    <div className="order-grid">{cola.map((pedido) => <article className="order-card" key={pedido.id}>
+      <div className="order-card-header"><div><span className="eyebrow">Mesa {pedido.mesa_numero}</span><h3>Pedido #{pedido.id}</h3></div><span className="estado" data-estado={pedido.estado_general}>{etiquetaEstado(pedido.estado_general)}</span></div>
+      <p className="order-meta">Recibido {new Date(pedido.fecha_hora_creacion).toLocaleString()}</p>
+      {pedido.observaciones && <p className="order-note"><strong>Observaciones</strong><br />{pedido.observaciones}</p>}
+      <ul className="item-list">{pedido.items.map((item) => <li key={item.id}>
+        <div className="item-main"><strong>{item.plato}</strong><span className="estado" data-estado={item.estado}>{etiquetaEstado(item.estado)}</span></div>
+        {item.estado === 'EN_COLA' && <button className="button button-primary" type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'iniciar')}>Iniciar preparación</button>}
+        {item.estado === 'EN_PREPARACION' && <button className="button button-primary" type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'listo')}>Marcar listo</button>}
       </li>)}</ul>
-    </article>)}
+    </article>)}</div>
     <div aria-live="polite">{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
   </section>
 }
@@ -297,75 +296,80 @@ function App() {
 
   const mesaSeleccionada = mesas.find((mesa) => mesa.id === Number(mesaId))
   const totalUnidades = Object.values(borrador).reduce((total, cantidad) => total + cantidad, 0)
+  const lineasBorrador = platos.filter((plato) => borrador[plato.id])
 
   return (
-    <main className="page">
-      <h1>Sala&Fogón</h1>
-      <p>Sesiones de mesa, pedidos y cocina</p>
+    <div className="app-shell">
+      <header className="site-header"><div className="site-header-inner">
+        <div className="brand"><span className="brand-mark" aria-hidden="true">S<span>&</span>F</span><div><strong>Sala<span>&</span>Fogón</strong><small>Gestión del restaurante</small></div></div>
+        {perfil && <div className="profile-controls"><span className="profile-role">{perfil.rol === 'COCINERO' ? 'Cocina' : perfil.rol === 'ADMIN' ? 'Administración' : 'Sala'}</span><span className="profile-name">{perfil.nombre}</span><button className="button button-header" type="button" disabled={ocupado} onClick={salir}>Salir</button></div>}
+      </div></header>
+    <main className={`page${perfil ? '' : ' login-page'}`}>
       {!perfil ? (
-        <form className="panel" onSubmit={ingresar}>
-          <h2>Acceso del personal</h2>
+        <form className="panel login-panel" onSubmit={ingresar}>
+          <span className="eyebrow">Acceso del personal</span><h1>Bienvenido a Sala&Fogón</h1>
+          <p>Ingresa para continuar con tu espacio de trabajo.</p>
           <label>Usuario <input autoComplete="username" value={usuario} onChange={(e) => setUsuario(e.target.value)} required /></label>
           <label>Contraseña <input type="password" autoComplete="current-password" value={clave} onChange={(e) => setClave(e.target.value)} required /></label>
-          <button disabled={ocupado}>Ingresar</button>
+          <button className="button button-primary login-submit" disabled={ocupado}>Ingresar</button>
           <p className="nota">Las credenciales se mantienen solo en esta pestaña durante la sesión.</p>
         </form>
       ) : (
         <>
-          <div className="cabecera"><strong>{perfil.rol === 'COCINERO' ? 'Cocinero' : perfil.rol === 'ADMIN' ? 'Administrador' : 'Mesero'}: {perfil.nombre}</strong><button type="button" disabled={ocupado} onClick={salir}>Salir</button></div>
+          <div className="page-intro"><span className="eyebrow">{perfil.rol === 'COCINERO' ? 'Operación de cocina' : perfil.rol === 'ADMIN' ? 'Administración' : 'Servicio de sala'}</span><h1>{perfil.rol === 'COCINERO' ? 'Preparación de pedidos' : perfil.rol === 'ADMIN' ? 'Configura tu restaurante' : 'Atención de mesas'}</h1><p>{perfil.rol === 'COCINERO' ? 'Avanza cada plato según su estado.' : perfil.rol === 'ADMIN' ? 'Organiza el catálogo, las mesas y el equipo.' : 'Abre una mesa, prepara el pedido y sigue su cuenta.'}</p></div>
           {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} /> : perfil.rol === 'ADMIN' ? <Administracion autorizacion={autorizacion} /> : <>
-          <section className="panel">
-            <h2>Mesa</h2>
-            <label>Seleccionar mesa
+          <section className="panel mesa-panel">
+            <div><span className="eyebrow">Mesa en atención</span><h2>Selecciona una mesa</h2><p className="section-description">Retoma una sesión propia o inicia una nueva atención.</p></div>
+            <div className="mesa-controls"><label>Seleccionar mesa
               <select value={mesaId} disabled={ocupado} onChange={(e) => seleccionarMesa(e.target.value)}>
                 <option value="">Elige una mesa</option>
                 {mesas.map((mesa) => <option key={mesa.id} value={mesa.id}>Mesa {mesa.numero}{mesa.sesion_activa_id ? mesa.sesion_propia ? ' — sesión propia' : ' — ocupada' : ''}</option>)}
               </select>
             </label>
-            {mesaSeleccionada && !mesaSeleccionada.sesion_activa_id && <button type="button" disabled={ocupado} onClick={abrirSesion}>Abrir sesión</button>}
-            {mesaSeleccionada?.sesion_activa_id && !mesaSeleccionada.sesion_propia && <p>Esta mesa ya tiene una sesión activa.</p>}
-            {sesionId && <p>Sesión activa: <strong>{sesionId}</strong></p>}
+            {mesaSeleccionada && !mesaSeleccionada.sesion_activa_id && <button className="button button-primary" type="button" disabled={ocupado} onClick={abrirSesion}>Abrir sesión</button>}
+            {mesaSeleccionada?.sesion_activa_id && !mesaSeleccionada.sesion_propia && <p className="notice">Esta mesa ya tiene una sesión activa.</p>}
+            {sesionId && <span className="session-badge">Sesión activa · #{sesionId}</span>}</div>
           </section>
           {sesionId && <>
-            <section className="panel">
-              <div className="cabecera"><h2>Platos</h2><button type="button" disabled={ocupado} onClick={actualizarCatalogo}>Actualizar catálogo</button></div>
-              {platos.length === 0 && <p>No hay platos registrados.</p>}
+            <nav className="section-nav" aria-label="Secciones de la mesa"><a href="#catalogo">Catálogo y pedido</a><a href="#pedidos">Pedidos</a><a href="#cuenta">Cuenta</a></nav>
+            <div className="mesero-grid" id="catalogo"><section className="panel catalog-panel">
+              <div className="section-heading"><div><span className="eyebrow">Carta actual</span><h2>Platos</h2><p>La disponibilidad se comprueba de nuevo al enviar.</p></div><button className="button button-secondary" type="button" disabled={ocupado} onClick={actualizarCatalogo}>Actualizar catálogo</button></div>
+              {platos.length === 0 && <div className="empty-state"><strong>Sin platos registrados</strong><p>El administrador puede añadir platos desde Configuración.</p></div>}
               <ul className="platos">
                 {platos.map((plato) => <li key={plato.id}>
-                  <div><strong>{plato.nombre}</strong><span> — ${plato.precio}</span><br /><small>{plato.disponible ? 'Disponible' : 'No disponible'}</small></div>
-                  <div className="controles">
-                    <button type="button" aria-label={`Quitar ${plato.nombre}`} disabled={ocupado || !borrador[plato.id]} onClick={() => cambiarCantidad(plato.id, -1)}>−</button>
+                  <div className="dish-info"><strong>{plato.nombre}</strong><span className="dish-price">${plato.precio}</span><span className={`availability${plato.disponible ? ' is-available' : ' is-unavailable'}`}>{plato.disponible ? 'Disponible' : 'No disponible'}</span></div>
+                  <div className="controles" aria-label={`Unidades de ${plato.nombre}`}>
+                    <button className="stepper-button" type="button" aria-label={`Quitar ${plato.nombre}`} disabled={ocupado || !borrador[plato.id]} onClick={() => cambiarCantidad(plato.id, -1)}>−</button>
                     <output>{borrador[plato.id] || 0}</output>
-                    <button type="button" aria-label={`Añadir ${plato.nombre}`} disabled={ocupado || !plato.disponible} onClick={() => cambiarCantidad(plato.id, 1)}>+</button>
+                    <button className="stepper-button" type="button" aria-label={`Añadir ${plato.nombre}`} disabled={ocupado || !plato.disponible} onClick={() => cambiarCantidad(plato.id, 1)}>+</button>
                   </div>
                 </li>)}
               </ul>
-            </section>
-            <section className="panel">
-              <h2>Pedido temporal</h2>
-              <p>{totalUnidades} unidad(es). Se guardará al confirmar el envío.</p>
-              <label>Observaciones <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} /></label>
-              <button type="button" disabled={ocupado || totalUnidades === 0} onClick={enviarPedido}>Enviar a cocina</button>
-            </section>
-            <section className="panel">
-              <div className="cabecera"><h2>Pedidos de esta sesión</h2><button type="button" disabled={ocupado} onClick={actualizarPedidos}>Actualizar</button></div>
-              {pedidosMesa.length === 0 && <p>Aún no hay pedidos en esta sesión.</p>}
-              {pedidosMesa.map((pedido) => <article className="pedido" key={pedido.id}>
-                <div className="cabecera pedido-cabecera"><h3>Pedido {pedido.numero_en_sesion}</h3><small>ID global {pedido.id}</small></div>
-                <p>Estado general: <strong>{etiquetaEstado(pedido.estado_general)}</strong></p>
-                <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
-                  <span>{item.plato} — {etiquetaEstado(item.estado)}</span>
-                  {item.estado === 'EN_COLA' && !item.pagado && <button type="button" disabled={ocupado} onClick={() => cancelarItem(item.id, sesionId)}>Cancelar</button>}
+            </section><aside className="panel draft-panel"><span className="eyebrow">Antes de enviar</span><h2>Pedido temporal</h2>
+              {lineasBorrador.length === 0 ? <p className="draft-empty">Añade platos del catálogo para preparar el pedido.</p> : <ul className="draft-lines">{lineasBorrador.map((plato) => <li key={plato.id}><span>{plato.nombre}</span><strong>× {borrador[plato.id]}</strong></li>)}</ul>}
+              <p className="draft-total"><strong>{totalUnidades}</strong> {totalUnidades === 1 ? 'unidad' : 'unidades'} <small>Se guardará al confirmar el envío.</small></p>
+              <label>Observaciones <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Indicaciones para cocina, si las hay" /></label>
+              <button className="button button-primary button-full" type="button" disabled={ocupado || totalUnidades === 0} onClick={enviarPedido}>Enviar a cocina</button>
+            </aside></div>
+            <section className="workspace-section" id="pedidos"><div className="section-heading"><div><span className="eyebrow">Seguimiento</span><h2>Pedidos de esta sesión</h2><p>Incluye pedidos listos y cancelados.</p></div><button className="button button-secondary" type="button" disabled={ocupado} onClick={actualizarPedidos}>Actualizar pedidos</button></div>
+              {pedidosMesa.length === 0 && <div className="empty-state"><strong>Aún no hay pedidos</strong><p>Los pedidos enviados aparecerán aquí.</p></div>}
+              <div className="order-grid">{pedidosMesa.map((pedido) => <article className="order-card" key={pedido.id}>
+                <div className="order-card-header"><div><span className="eyebrow">Pedido de la sesión</span><h3>Pedido {pedido.numero_en_sesion}</h3></div><small>ID global #{pedido.id}</small></div>
+                <span className="estado" data-estado={pedido.estado_general}>{etiquetaEstado(pedido.estado_general)}</span>
+                <ul className="item-list">{pedido.items.map((item) => <li key={item.id}>
+                  <div className="item-main"><strong>{item.plato}</strong><span className="estado" data-estado={item.estado}>{etiquetaEstado(item.estado)}</span></div>
+                  {item.estado === 'EN_COLA' && !item.pagado && <button className="button button-danger-quiet" type="button" disabled={ocupado} onClick={() => cancelarItem(item.id, sesionId)}>Cancelar</button>}
                 </li>)}</ul>
-              </article>)}
+              </article>)}</div>
             </section>
-            <Cuenta key={sesionId} sesionId={sesionId} autorizacion={autorizacion} revision={revisionCuenta} alCerrar={sesionCerrada} />
+            <div id="cuenta"><Cuenta key={sesionId} sesionId={sesionId} autorizacion={autorizacion} revision={revisionCuenta} alCerrar={sesionCerrada} /></div>
           </>}
           </>}
         </>
       )}
       <div aria-live="polite">{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
     </main>
+    </div>
   )
 }
 
