@@ -18,6 +18,7 @@ from .models import (
     Pago,
     Plato,
     Sesion,
+    Usuario,
 )
 
 
@@ -41,6 +42,11 @@ def sesion_bloqueada(sesion_id, mesero):
 def abrir_sesion(mesa_id, mesero):
     try:
         with transaction.atomic():
+            # Employee deactivation takes this lock too. Recheck activity after
+            # acquiring it so a concurrent deactivation cannot be bypassed.
+            perfil = Usuario.objects.select_for_update().get(pk=mesero.pk)
+            if perfil.rol != Usuario.Rol.MESERO or not perfil.activo:
+                raise PermissionDenied("La cuenta no tiene el rol activo requerido.")
             mesa = Mesa.objects.select_for_update().filter(pk=mesa_id).first()
             if mesa is None:
                 raise NotFound("La mesa no existe.")

@@ -1,4 +1,4 @@
-"""HTTP endpoints for waiters and kitchen staff."""
+"""HTTP endpoints for restaurant staff."""
 
 from decimal import Decimal
 
@@ -11,7 +11,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import AsignacionPago, Cuenta, ItemPedido, Mesa, Pago, Pedido, Plato, Sesion, Usuario
-from .serializers import AperturaSesionSerializer, EnvioPedidoSerializer, RegistroPagoSerializer
+from .personal import cambiar_estado_empleado, crear_cuenta_personal
+from .serializers import (
+    AperturaSesionSerializer, EnvioPedidoSerializer, EstadoEmpleadoSerializer,
+    NuevoEmpleadoSerializer, RegistroPagoSerializer,
+)
 from .services import Conflicto, abrir_sesion, avanzar_item, cancelar_item, cerrar_sesion, enviar_pedido, registrar_pago
 
 
@@ -33,6 +37,10 @@ def cocinero_autenticado(request):
     return perfil_autenticado(request, Usuario.Rol.COCINERO)
 
 
+def admin_autenticado(request):
+    return perfil_autenticado(request, Usuario.Rol.ADMIN)
+
+
 class VistaAutenticada(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
@@ -44,6 +52,45 @@ class VistaMesero(VistaAutenticada):
 
 class VistaCocina(VistaAutenticada):
     pass
+
+
+class VistaAdmin(VistaAutenticada):
+    pass
+
+
+def representar_empleado(empleado):
+    return {
+        "id": empleado.id,
+        "username": empleado.cuenta_acceso.username,
+        "nombre": empleado.nombre,
+        "rol": empleado.rol,
+        "activo": empleado.activo,
+    }
+
+
+class EmpleadosView(VistaAdmin):
+    def get(self, request):
+        admin_autenticado(request)
+        empleados = Usuario.objects.filter(
+            rol__in=(Usuario.Rol.MESERO, Usuario.Rol.COCINERO)
+        ).select_related("cuenta_acceso").order_by("nombre", "id")
+        return Response([representar_empleado(empleado) for empleado in empleados])
+
+    def post(self, request):
+        admin_autenticado(request)
+        datos = NuevoEmpleadoSerializer(data=request.data)
+        datos.is_valid(raise_exception=True)
+        empleado = crear_cuenta_personal(**datos.validated_data)
+        return Response(representar_empleado(empleado), status=201)
+
+
+class EmpleadoView(VistaAdmin):
+    def patch(self, request, empleado_id):
+        admin_autenticado(request)
+        datos = EstadoEmpleadoSerializer(data=request.data)
+        datos.is_valid(raise_exception=True)
+        empleado = cambiar_estado_empleado(empleado_id, datos.validated_data["activo"])
+        return Response(representar_empleado(empleado))
 
 
 class MiPerfilView(VistaAutenticada):

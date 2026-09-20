@@ -66,7 +66,7 @@ npm install
 npm run dev
 ```
 
-Abre la dirección mostrada por Vite, normalmente <http://localhost:5173/>. Vite reenvía las peticiones `/api` al backend en `127.0.0.1:8000`; no hay que configurar CORS para este entorno local. La interfaz solicita las credenciales de un mesero, permite elegir una mesa, abrir o retomar su sesión, armar un pedido temporal y enviarlo. La contraseña no se guarda en el repositorio ni en el almacenamiento del navegador; la pestaña mantiene la autorización Basic en memoria hasta salir o recargarla. Usa este flujo únicamente en el entorno local previsto, pues HTTP Basic envía credenciales en cada petición y una instalación compartida requeriría HTTPS.
+Abre la dirección mostrada por Vite, normalmente <http://localhost:5173/>. Vite reenvía las peticiones `/api` al backend en `127.0.0.1:8000`; no hay que configurar CORS para este entorno local. La interfaz ofrece vistas según el rol: ADMIN gestiona empleados, MESERO atiende mesas y COCINERO prepara pedidos. La contraseña no se guarda en el repositorio ni en el almacenamiento del navegador; la pestaña mantiene la autorización Basic en memoria hasta salir o recargarla. Usa este flujo únicamente en el entorno local previsto, pues HTTP Basic envía credenciales en cada petición y una instalación compartida requeriría HTTPS.
 
 Para comprobar la compilación:
 
@@ -100,13 +100,30 @@ backend\.venv\Scripts\python.exe backend\manage.py test restaurant --keepdb --no
 
 Antes de ejecutarlas, comprueba que `test_sala_fogon` existe, está vacía la primera vez y pertenece a `sala_fogon_app`. El comando no usa la base principal `sala_fogon` para los datos de prueba y conserva la base de pruebas al terminar.
 
+## Administrador inicial y empleados
+
+Para crear la primera cuenta administradora del restaurante, ejecuta una sola vez desde la raíz:
+
+```powershell
+backend\.venv\Scripts\python.exe backend\manage.py crear_administrador
+```
+
+El comando pide usuario, nombre y contraseña en la terminal; la contraseña no aparece al escribirla ni se incluye en argumentos. Crea juntos `auth.User` y `Usuario` con rol `ADMIN` en una transacción. Esta cuenta **no** es superusuaria de Django y no accede a Django Admin. Si ya existe un perfil ADMIN, utiliza esa cuenta: el comando se detiene sin crear otro. Un superusuario técnico existente puede seguir usándose para configurar mesas y catálogo en Django Admin, pero su condición de superusuario no sustituye el perfil ADMIN del restaurante.
+
+En React, entra con la cuenta ADMIN para crear empleados con rol `MESERO` o `COCINERO` y activar o desactivar sus cuentas. No se permite crear otros ADMIN ni modificar privilegios de Django desde esta pantalla. Si un mesero tiene alguna sesión abierta, la desactivación se rechaza hasta que cierre todas sus sesiones. Los cambios de rol y la recuperación de contraseñas no forman parte de esta interfaz.
+
+| Método y ruta | Rol | Función |
+| --- | --- | --- |
+| `GET /api/empleados/` | `ADMIN` | Listar meseros y cocineros con su estado activo. |
+| `POST /api/empleados/` | `ADMIN` | Crear cuenta y perfil con `username`, `nombre`, `password` y `rol` (`MESERO` o `COCINERO`). |
+| `PATCH /api/empleados/<id>/` | `ADMIN` | Activar o desactivar con `{"activo": true}` o `{"activo": false}`. |
+
 ## Datos iniciales y flujo del mesero
 
-El sistema no crea mesas, platos, ingredientes ni cuentas de personal automáticamente. Para probarlo desde cero, crea primero un administrador local con `backend\.venv\Scripts\python.exe backend\manage.py createsuperuser` y entra a <http://127.0.0.1:8000/admin/>. En la administración de Django:
+El sistema no crea mesas, platos ni ingredientes automáticamente. Para cargarlos desde cero, crea un superusuario **técnico** con `backend\.venv\Scripts\python.exe backend\manage.py createsuperuser` y entra a <http://127.0.0.1:8000/admin/>. Después:
 
-1. Crea una cuenta de acceso normal en **Usuarios** con contraseña propia e `is_active` activado; no necesita `is_staff` para trabajar como mesero.
-2. Crea su perfil en **Usuarios del restaurante**, vincúlalo a esa cuenta y asigna el rol `MESERO`.
-3. Crea una mesa, ingredientes con existencias, y platos activos con su precio y composición. Las cantidades de receta son por **una unidad** de plato; las existencias y recetas admiten tres decimales.
+1. En Django Admin, crea una mesa, ingredientes con existencias, y platos activos con su precio y composición. Las cantidades de receta son por **una unidad** de plato; las existencias y recetas admiten tres decimales.
+2. Crea la cuenta ADMIN inicial con el comando anterior y entra en React para dar de alta al mesero y al cocinero. Si ya creaste cuentas y perfiles manualmente, consérvalos: aparecerán en la lista de empleados.
 
 En React, entra con la cuenta del mesero. Una mesa sin sesión activa muestra **Abrir sesión**; una sesión propia activa puede retomarse. Añade unidades enteras de platos disponibles y confirma **Enviar a cocina**. La consulta del catálogo es informativa: el backend vuelve a comprobar los datos actuales al enviar. Si el consumo conjunto excede las existencias o alguna validación falla, no se crea el pedido ni se descuenta ingrediente alguno.
 
@@ -114,7 +131,7 @@ Los endpoints de este flujo son:
 
 | Método y ruta | Función |
 | --- | --- |
-| `GET /api/me/` | Verificar cuenta Basic y perfil `MESERO` activo. |
+| `GET /api/me/` | Verificar cuenta Basic y devolver el perfil activo del restaurante. |
 | `GET /api/mesas/` | Listar mesas y su sesión activa, si existe. |
 | `POST /api/sesiones/` | Abrir sesión y cuenta con `{"mesa_id": 1}`. El mesero se toma de la autenticación. |
 | `GET /api/platos/` | Listar platos y disponibilidad calculada desde estado, receta y existencias. |
@@ -124,7 +141,7 @@ Las rutas anteriores, salvo `/api/me/`, requieren HTTP Basic y el rol `MESERO`. 
 
 ## Cocina y cancelaciones
 
-En Django Admin crea una cuenta de acceso normal activa y un perfil `Usuario` vinculado con rol `COCINERO`; no necesita `is_staff`. En React, entra con sus credenciales. La cola muestra los pedidos pendientes de más antiguos a más recientes, agrupados por pedido y con su mesa, observaciones e ítems en `EN_COLA` o `EN_PREPARACION`. Pulsa **Iniciar** en una unidad en cola y después **Marcar listo**. La vista se actualiza tras cada operación; **Actualizar** consulta también cambios hechos desde otra pestaña. No hay actualización en tiempo real ni WebSockets.
+El ADMIN puede crear la cuenta de COCINERO desde React. Entra con las credenciales del cocinero. La cola muestra los pedidos pendientes de más antiguos a más recientes, agrupados por pedido y con su mesa, observaciones e ítems en `EN_COLA` o `EN_PREPARACION`. Pulsa **Iniciar** en una unidad en cola y después **Marcar listo**. La vista se actualiza tras cada operación; **Actualizar** consulta también cambios hechos desde otra pestaña. No hay actualización en tiempo real ni WebSockets.
 
 El mesero ve todos los pedidos de la sesión seleccionada, incluidos los completados y cancelados. Se muestran como **Pedido 1**, **Pedido 2**, etc., según fecha de creación e ID dentro de esa sesión; el ID global permanece pequeño a la derecha para identificar el registro real. Puede pulsar **Actualizar** y cancelar una unidad que aún aparezca en `EN_COLA` y no esté asignada a un pago. Al cambiar de mesa se vacía la lista anterior y se ignoran las respuestas de consultas antiguas. El backend vuelve a comprobar el estado y la asignación de pago: si cocina la inició entretanto o el ítem ya fue pagado, rechaza la cancelación con HTTP 409. Una cancelación aceptada conserva el ítem en `CANCELADO` y devuelve las cantidades registradas en su composición histórica, incluso si la receta actual del plato ha cambiado. Una segunda cancelación devuelve HTTP 409 y no repite la devolución.
 

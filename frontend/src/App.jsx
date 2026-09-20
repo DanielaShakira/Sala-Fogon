@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createLatestRequestGuard } from './latestRequest.js'
 import { api } from './api.js'
 import Cuenta from './Cuenta.jsx'
+import Empleados from './Empleados.jsx'
 import './App.css'
 
 function basicHeader(usuario, clave) {
@@ -126,8 +127,8 @@ function App() {
         ])
         setMesas(datosMesas)
         setPlatos(datosPlatos)
-      } else if (datosPerfil.rol !== 'COCINERO') {
-        throw new Error('Esta interfaz requiere el rol MESERO o COCINERO.')
+      } else if (datosPerfil.rol !== 'COCINERO' && datosPerfil.rol !== 'ADMIN') {
+        throw new Error('Esta cuenta no tiene un rol disponible en la interfaz.')
       }
       setAutorizacion(encabezado)
       setPerfil(datosPerfil)
@@ -293,7 +294,7 @@ function App() {
 
   return (
     <main className="page">
-      <h1>Sala Fogón</h1>
+      <h1>Sala&Fogón</h1>
       <p>Sesiones de mesa, pedidos y cocina</p>
       {!perfil ? (
         <form className="panel" onSubmit={ingresar}>
@@ -305,8 +306,8 @@ function App() {
         </form>
       ) : (
         <>
-          <div className="cabecera"><strong>{perfil.rol === 'COCINERO' ? 'Cocinero' : 'Mesero'}: {perfil.nombre}</strong><button type="button" disabled={ocupado} onClick={salir}>Salir</button></div>
-          {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} /> : <>
+          <div className="cabecera"><strong>{perfil.rol === 'COCINERO' ? 'Cocinero' : perfil.rol === 'ADMIN' ? 'Administrador' : 'Mesero'}: {perfil.nombre}</strong><button type="button" disabled={ocupado} onClick={salir}>Salir</button></div>
+          {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} /> : perfil.rol === 'ADMIN' ? <Empleados autorizacion={autorizacion} /> : <>
           <section className="panel">
             <h2>Mesa</h2>
             <label>Seleccionar mesa
