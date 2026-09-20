@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Empleados from './Empleados.jsx'
 import Configuracion from './Configuracion.jsx'
 
-export default function Administracion({ autorizacion }) {
+export default function Administracion({ autorizacion, avisar }) {
   const [seccion, setSeccion] = useState('configuracion')
 
   return <>
@@ -11,7 +11,7 @@ export default function Administracion({ autorizacion }) {
       <button type="button" aria-pressed={seccion === 'empleados'} onClick={() => setSeccion('empleados')}>Empleados</button>
     </nav>
     {seccion === 'configuracion'
-      ? <Configuracion autorizacion={autorizacion} />
-      : <Empleados autorizacion={autorizacion} />}
+      ? <Configuracion autorizacion={autorizacion} avisar={avisar} />
+      : <Empleados autorizacion={autorizacion} avisar={avisar} />}
   </>
 }

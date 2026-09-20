@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLatestRequestGuard } from './latestRequest.js'
+import { createSingleFlight, INTERVALO_CONFIGURACION, INTERVALO_OPERATIVO, useAutoRefresh } from './autoRefresh.js'
 import { api } from './api.js'
 import Cuenta from './Cuenta.jsx'
 import Administracion from './Administracion.jsx'
 import { etiquetaEstado } from './etiquetas.js'
+import { createReadyTracker, mensajeItemsListos } from './readyNotifications.js'
+import AvisoGlobal from './AvisoGlobal.jsx'
 import './App.css'
 
 function basicHeader(usuario, clave) {
@@ -11,30 +14,43 @@ function basicHeader(usuario, clave) {
   return `Basic ${btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))}`
 }
 
-function Cocina({ autorizacion }) {
+function Cocina({ autorizacion, avisar }) {
   const [cola, setCola] = useState([])
   const [ocupado, setOcupado] = useState(false)
+  const [errorSincronizacion, setErrorSincronizacion] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
   const colaGuard = useRef(null)
   if (colaGuard.current === null) colaGuard.current = createLatestRequestGuard()
+  const colaFlight = useRef(null)
+  if (colaFlight.current === null) colaFlight.current = createSingleFlight()
+  function reportarError(texto) { setError(texto); avisar('error', texto) }
+  function reportarExito(texto) { setMensaje(texto); avisar('exito', texto) }
 
-  async function refrescar() {
-    const sigueVigente = colaGuard.current.begin('cola')
-    try {
-      const datos = await api('cocina/cola', autorizacion)
-      if (sigueVigente()) {
-        setCola(datos)
-        setError('')
+  function refrescar({ silencioso = false, force = false } = {}) {
+    return colaFlight.current.run(autorizacion, async () => {
+      const sigueVigente = colaGuard.current.begin('cola')
+      try {
+        const datos = await api('cocina/cola', autorizacion)
+        if (sigueVigente()) {
+          setCola(datos)
+          setErrorSincronizacion(false)
+          if (!silencioso) setError('')
+        }
+      } catch (fallo) {
+        if (sigueVigente()) {
+          if (silencioso) setErrorSincronizacion(true)
+          else reportarError(fallo.message)
+        }
       }
-    } catch (fallo) {
-      if (sigueVigente()) setError(fallo.message)
-    }
+    }, { force })
   }
+
+  useAutoRefresh(() => refrescar({ silencioso: true }), INTERVALO_OPERATIVO, !ocupado)
 
   useEffect(() => {
     colaGuard.current.select('cola')
-    void refrescar()
+    void refrescar({ force: true })
     return () => colaGuard.current.select(null)
   }, [autorizacion])
 
@@ -46,18 +62,19 @@ function Cocina({ autorizacion }) {
     let falloOperacion = null
     try {
       await api(`items/${itemId}/${accion}`, autorizacion, { method: 'POST' })
-      setMensaje(accion === 'iniciar' ? 'Preparación iniciada.' : 'Plato marcado como listo.')
+      reportarExito(accion === 'iniciar' ? 'Preparación iniciada.' : 'Plato marcado como listo.')
     } catch (fallo) {
       falloOperacion = fallo
     } finally {
-      await refrescar()
-      if (falloOperacion) setError(falloOperacion.message)
+      await refrescar({ force: true })
+      if (falloOperacion) reportarError(falloOperacion.message)
       setOcupado(false)
     }
   }
 
   return <section className="workspace-section">
-    <div className="section-heading"><div><span className="eyebrow">Preparación</span><h2>Cola de cocina</h2><p>Pedidos pendientes, del más antiguo al más reciente.</p></div><button className="button button-secondary" type="button" disabled={ocupado} onClick={refrescar}>Actualizar cola</button></div>
+    <div className="section-heading"><div><span className="eyebrow">Preparación</span><h2>Cola de cocina</h2><p>Pedidos pendientes, del más antiguo al más reciente.</p></div></div>
+    {errorSincronizacion && <p className="nota" role="status">No se pudo actualizar la cola. Se reintentará automáticamente.</p>}
     {cola.length === 0 && <div className="empty-state"><strong>La cola está al día</strong><p>No hay ítems pendientes de preparación.</p></div>}
     <div className="order-grid">{cola.map((pedido) => <article className="order-card" key={pedido.id}>
       <div className="order-card-header"><div><span className="eyebrow">Mesa {pedido.mesa_numero}</span><h3>Pedido #{pedido.id}</h3></div><span className="estado" data-estado={pedido.estado_general}>{etiquetaEstado(pedido.estado_general)}</span></div>
@@ -69,7 +86,7 @@ function Cocina({ autorizacion }) {
         {item.estado === 'EN_PREPARACION' && <button className="button button-primary" type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'listo')}>Marcar listo</button>}
       </li>)}</ul>
     </article>)}</div>
-    <div aria-live="polite">{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
+    <div>{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
   </section>
 }
 
@@ -87,25 +104,126 @@ function App() {
   const [observaciones, setObservaciones] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
+  const [avisos, setAvisos] = useState([])
   const [ocupado, setOcupado] = useState(false)
+  const [errorSincronizacion, setErrorSincronizacion] = useState({ pedidos: false, platos: false, mesas: false })
   const [revisionCuenta, setRevisionCuenta] = useState(0)
   const pedidosGuard = useRef(null)
   if (pedidosGuard.current === null) pedidosGuard.current = createLatestRequestGuard()
+  const seguimientoGuard = useRef(null)
+  if (seguimientoGuard.current === null) seguimientoGuard.current = createLatestRequestGuard()
+  const listos = useRef(null)
+  if (listos.current === null) listos.current = createReadyTracker()
+  const platosGuard = useRef(null)
+  if (platosGuard.current === null) platosGuard.current = createLatestRequestGuard()
+  const mesasGuard = useRef(null)
+  if (mesasGuard.current === null) mesasGuard.current = createLatestRequestGuard()
+  const pedidosFlight = useRef(null)
+  if (pedidosFlight.current === null) pedidosFlight.current = createSingleFlight()
+  const platosFlight = useRef(null)
+  if (platosFlight.current === null) platosFlight.current = createSingleFlight()
+  const mesasFlight = useRef(null)
+  if (mesasFlight.current === null) mesasFlight.current = createSingleFlight()
+  const avisar = useCallback((tipo, texto) => setAvisos((actual) => tipo === 'listo'
+    ? [...actual, { tipo, texto }]
+    : [{ tipo, texto }, ...actual.filter((pendiente) => pendiente.tipo === 'listo')]), [])
+  const cerrarAviso = useCallback(() => setAvisos((actual) => actual.slice(1)), [])
+  function reportarError(texto) { setError(texto); avisar('error', texto) }
+  function reportarExito(texto) { setMensaje(texto); avisar('exito', texto) }
 
-  async function cargarPedidos(sesionObjetivo) {
-    const sigueVigente = pedidosGuard.current.begin(sesionObjetivo)
-    try {
-      const datos = await api(`sesiones/${sesionObjetivo}/pedidos`, autorizacion)
-      if (sigueVigente()) {
-        setPedidosMesa(datos)
-        setError('')
-        return datos
-      }
-    } catch (fallo) {
-      if (sigueVigente()) setError(fallo.message)
-    }
-    return null
+  function estadoSincronizacion(recurso, error) {
+    setErrorSincronizacion((actual) => actual[recurso] === error
+      ? actual : { ...actual, [recurso]: error })
   }
+
+  function cargarPedidos(sesionObjetivo, { silencioso = false, force = false } = {}) {
+    return pedidosFlight.current.run(autorizacion, async () => {
+      const sigueVigente = seguimientoGuard.current.begin(autorizacion)
+      try {
+        const datos = await api('mis-pedidos-activos', autorizacion)
+        if (sigueVigente()) {
+          const nuevosListos = listos.current.observe(datos)
+          setPedidosMesa(datos.filter((pedido) => pedido.sesion_id === pedidosGuard.current.current()))
+          estadoSincronizacion('pedidos', false)
+          if (!silencioso) setError('')
+          if (nuevosListos.length) avisar('listo', mensajeItemsListos(nuevosListos))
+          return datos.filter((pedido) => pedido.sesion_id === sesionObjetivo)
+        }
+      } catch (fallo) {
+        if (sigueVigente()) {
+          if (silencioso) estadoSincronizacion('pedidos', true)
+          else reportarError(fallo.message)
+        }
+      }
+      return null
+    }, { force })
+  }
+
+  function cargarPlatos({ silencioso = false, force = false } = {}) {
+    return platosFlight.current.run(autorizacion, async () => {
+      const sigueVigente = platosGuard.current.begin(autorizacion)
+      try {
+        const datos = await api('platos', autorizacion)
+        if (sigueVigente()) {
+          setPlatos(datos)
+          estadoSincronizacion('platos', false)
+        }
+        return datos
+      } catch (fallo) {
+        if (sigueVigente()) {
+          if (silencioso) estadoSincronizacion('platos', true)
+          else throw fallo
+        }
+        return null
+      }
+    }, { force })
+  }
+
+  function cargarMesas({ silencioso = false, force = false } = {}) {
+    return mesasFlight.current.run(autorizacion, async () => {
+      const sigueVigente = mesasGuard.current.begin(autorizacion)
+      try {
+        const datos = await api('mesas', autorizacion)
+        if (sigueVigente()) {
+          setMesas(datos)
+          estadoSincronizacion('mesas', false)
+        }
+        return datos
+      } catch (fallo) {
+        if (sigueVigente()) {
+          if (silencioso) estadoSincronizacion('mesas', true)
+          else throw fallo
+        }
+        return null
+      }
+    }, { force })
+  }
+
+  useEffect(() => {
+    platosGuard.current.select(autorizacion)
+    mesasGuard.current.select(autorizacion)
+  }, [autorizacion])
+
+  useAutoRefresh(
+    () => cargarPedidos(pedidosGuard.current.current(), { silencioso: true }),
+    INTERVALO_OPERATIVO,
+    perfil?.rol === 'MESERO' && !ocupado,
+  )
+  useAutoRefresh(
+    () => Promise.all([
+      cargarMesas({ silencioso: true }),
+      cargarPlatos({ silencioso: true }),
+    ]),
+    INTERVALO_CONFIGURACION,
+    perfil?.rol === 'MESERO' && !ocupado,
+  )
+
+  useEffect(() => {
+    if (perfil?.rol !== 'MESERO') return undefined
+    seguimientoGuard.current.select(autorizacion)
+    void cargarPedidos(null, { silencioso: true, force: true })
+    return () => seguimientoGuard.current.select(null)
+  }, [autorizacion, perfil?.rol])
 
   async function ingresar(evento) {
     evento.preventDefault()
@@ -125,9 +243,10 @@ function App() {
       }
       setAutorizacion(encabezado)
       setPerfil(datosPerfil)
+      listos.current.reset()
       setClave('')
     } catch (fallo) {
-      setError(fallo.message)
+      reportarError(fallo.message)
     } finally {
       setOcupado(false)
     }
@@ -135,6 +254,10 @@ function App() {
 
   function salir() {
     pedidosGuard.current.select(null)
+    seguimientoGuard.current.select(null)
+    listos.current.reset()
+    platosGuard.current.select(null)
+    mesasGuard.current.select(null)
     setAutorizacion('')
     setPerfil(null)
     setMesaId('')
@@ -144,6 +267,8 @@ function App() {
     setObservaciones('')
     setMensaje('')
     setError('')
+    setAvisos([])
+    setErrorSincronizacion({ pedidos: false, platos: false, mesas: false })
   }
 
   function seleccionarMesa(valor) {
@@ -156,10 +281,11 @@ function App() {
     setBorrador({})
     setMensaje('')
     setError('')
-    if (sesionNueva !== null) void cargarPedidos(sesionNueva)
+    if (sesionNueva !== null) void cargarPedidos(sesionNueva, { force: true })
   }
 
   async function abrirSesion() {
+    mesasGuard.current.invalidate()
     setOcupado(true)
     setError('')
     try {
@@ -169,14 +295,14 @@ function App() {
       pedidosGuard.current.select(sesion.id)
       setSesionId(sesion.id)
       setPedidosMesa([])
-      setMensaje(`Sesión ${sesion.id} abierta para la mesa seleccionada.`)
+      reportarExito(`Sesión ${sesion.id} abierta para la mesa seleccionada.`)
       try {
-        setMesas(await api('mesas', autorizacion))
+        await cargarMesas({ force: true })
       } catch (fallo) {
-        setError(`La sesión se abrió, pero no se pudo actualizar la lista de mesas: ${fallo.message}`)
+        reportarError(`La sesión se abrió, pero no se pudo actualizar la lista de mesas: ${fallo.message}`)
       }
     } catch (fallo) {
-      setError(fallo.message)
+      reportarError(fallo.message)
     } finally {
       setOcupado(false)
     }
@@ -198,9 +324,12 @@ function App() {
       plato_id: Number(platoId), cantidad,
     }))
     if (!items.length) {
-      setError('Añade al menos una unidad al pedido.')
+      reportarError('Añade al menos una unidad al pedido.')
       return
     }
+    pedidosGuard.current.invalidate()
+    seguimientoGuard.current.invalidate()
+    platosGuard.current.invalidate()
     setOcupado(true)
     setError('')
     try {
@@ -211,39 +340,19 @@ function App() {
       setBorrador({})
       setObservaciones('')
       setRevisionCuenta((actual) => actual + 1)
-      setMensaje(`Pedido enviado a cocina: ${pedido.items.length} unidad(es) en cola. ID global ${pedido.id}.`)
-      const pedidosActualizados = await cargarPedidos(sesionObjetivo)
+      reportarExito(`Pedido enviado a cocina: ${pedido.items.length} unidad(es) en cola. ID global ${pedido.id}.`)
+      const pedidosActualizados = await cargarPedidos(sesionObjetivo, { force: true })
       const numeroLocal = pedidosActualizados?.find((actual) => actual.id === pedido.id)?.numero_en_sesion
       if (numeroLocal) {
-        setMensaje(`Pedido ${numeroLocal} enviado a cocina: ${pedido.items.length} unidad(es) en cola. ID global ${pedido.id}.`)
+        reportarExito(`Pedido ${numeroLocal} enviado a cocina: ${pedido.items.length} unidad(es) en cola. ID global ${pedido.id}.`)
       }
       try {
-        setPlatos(await api('platos', autorizacion))
+        await cargarPlatos({ force: true })
       } catch (fallo) {
-        setError(`El pedido se envió, pero no se pudo actualizar el catálogo: ${fallo.message}`)
+        reportarError(`El pedido se envió, pero no se pudo actualizar el catálogo: ${fallo.message}`)
       }
     } catch (fallo) {
-      setError(fallo.message)
-    } finally {
-      setOcupado(false)
-    }
-  }
-
-  async function actualizarPedidos() {
-    const sesionObjetivo = pedidosGuard.current.current()
-    if (sesionObjetivo === null) return
-    setOcupado(true)
-    await cargarPedidos(sesionObjetivo)
-    setOcupado(false)
-  }
-
-  async function actualizarCatalogo() {
-    setOcupado(true)
-    setError('')
-    try {
-      setPlatos(await api('platos', autorizacion))
-    } catch (fallo) {
-      setError(fallo.message)
+      reportarError(fallo.message)
     } finally {
       setOcupado(false)
     }
@@ -255,25 +364,27 @@ function App() {
       return
     }
     pedidosGuard.current.invalidate()
+    seguimientoGuard.current.invalidate()
+    platosGuard.current.invalidate()
     setOcupado(true)
     setError('')
     setMensaje('')
     let falloOperacion = null
     try {
       await api(`items/${itemId}/cancelar`, autorizacion, { method: 'POST' })
-      setMensaje('Plato cancelado; ingredientes devueltos.')
+      reportarExito('Plato cancelado; ingredientes devueltos.')
       if (pedidosGuard.current.current() === sesionDeLaLista) setRevisionCuenta((actual) => actual + 1)
     } catch (fallo) {
       falloOperacion = fallo
     } finally {
       if (pedidosGuard.current.current() === sesionDeLaLista) {
-        await cargarPedidos(sesionDeLaLista)
+        await cargarPedidos(sesionDeLaLista, { force: true })
         try {
-          setPlatos(await api('platos', autorizacion))
+          await cargarPlatos({ force: true })
         } catch (fallo) {
-          setError(`No se pudo actualizar el catálogo: ${fallo.message}`)
+          reportarError(`No se pudo actualizar el catálogo: ${fallo.message}`)
         }
-        if (falloOperacion) setError(falloOperacion.message)
+        if (falloOperacion) reportarError(falloOperacion.message)
       }
       setOcupado(false)
     }
@@ -282,15 +393,17 @@ function App() {
   async function sesionCerrada(sesionCerradaId) {
     if (pedidosGuard.current.current() !== sesionCerradaId) return
     pedidosGuard.current.select(null)
+    seguimientoGuard.current.invalidate()
+    mesasGuard.current.invalidate()
     setSesionId(null)
     setPedidosMesa([])
     setBorrador({})
     setObservaciones('')
-    setMensaje(`Sesión ${sesionCerradaId} cerrada. La mesa puede iniciar una nueva atención.`)
+    reportarExito(`Sesión ${sesionCerradaId} cerrada. La mesa puede iniciar una nueva atención.`)
     try {
-      setMesas(await api('mesas', autorizacion))
+      await cargarMesas({ force: true })
     } catch (fallo) {
-      setError(`La sesión se cerró, pero no se pudo actualizar la lista de mesas: ${fallo.message}`)
+      reportarError(`La sesión se cerró, pero no se pudo actualizar la lista de mesas: ${fallo.message}`)
     }
   }
 
@@ -300,6 +413,7 @@ function App() {
 
   return (
     <div className="app-shell">
+      <AvisoGlobal aviso={avisos[0]} alCerrar={cerrarAviso} />
       <header className="site-header"><div className="site-header-inner">
         <div className="brand"><span className="brand-mark" aria-hidden="true">S<span>&</span>F</span><div><strong>Sala<span>&</span>Fogón</strong><small>Gestión del restaurante</small></div></div>
         {perfil && <div className="profile-controls"><span className="profile-role">{perfil.rol === 'COCINERO' ? 'Cocina' : perfil.rol === 'ADMIN' ? 'Administración' : 'Sala'}</span><span className="profile-name">{perfil.nombre}</span><button className="button button-header" type="button" disabled={ocupado} onClick={salir}>Salir</button></div>}
@@ -317,7 +431,8 @@ function App() {
       ) : (
         <>
           <div className="page-intro"><span className="eyebrow">{perfil.rol === 'COCINERO' ? 'Operación de cocina' : perfil.rol === 'ADMIN' ? 'Administración' : 'Servicio de sala'}</span><h1>{perfil.rol === 'COCINERO' ? 'Preparación de pedidos' : perfil.rol === 'ADMIN' ? 'Configura tu restaurante' : 'Atención de mesas'}</h1><p>{perfil.rol === 'COCINERO' ? 'Avanza cada plato según su estado.' : perfil.rol === 'ADMIN' ? 'Organiza el catálogo, las mesas y el equipo.' : 'Abre una mesa, prepara el pedido y sigue su cuenta.'}</p></div>
-          {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} /> : perfil.rol === 'ADMIN' ? <Administracion autorizacion={autorizacion} /> : <>
+          {perfil.rol === 'MESERO' && Object.values(errorSincronizacion).some(Boolean) && <p className="nota" role="status">Algunos datos no pudieron actualizarse. Se reintentará automáticamente sin perder tu pedido temporal.</p>}
+          {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} avisar={avisar} /> : perfil.rol === 'ADMIN' ? <Administracion autorizacion={autorizacion} avisar={avisar} /> : <>
           <section className="panel mesa-panel">
             <div><span className="eyebrow">Mesa en atención</span><h2>Selecciona una mesa</h2><p className="section-description">Retoma una sesión propia o inicia una nueva atención.</p></div>
             <div className="mesa-controls"><label>Seleccionar mesa
@@ -333,7 +448,7 @@ function App() {
           {sesionId && <>
             <nav className="section-nav" aria-label="Secciones de la mesa"><a href="#catalogo">Catálogo y pedido</a><a href="#pedidos">Pedidos</a><a href="#cuenta">Cuenta</a></nav>
             <div className="mesero-grid" id="catalogo"><section className="panel catalog-panel">
-              <div className="section-heading"><div><span className="eyebrow">Carta actual</span><h2>Platos</h2><p>La disponibilidad se comprueba de nuevo al enviar.</p></div><button className="button button-secondary" type="button" disabled={ocupado} onClick={actualizarCatalogo}>Actualizar catálogo</button></div>
+              <div className="section-heading"><div><span className="eyebrow">Carta actual</span><h2>Platos</h2><p>La disponibilidad se comprueba de nuevo al enviar.</p></div></div>
               {platos.length === 0 && <div className="empty-state"><strong>Sin platos registrados</strong><p>El administrador puede añadir platos desde Configuración.</p></div>}
               <ul className="platos">
                 {platos.map((plato) => <li key={plato.id}>
@@ -351,7 +466,7 @@ function App() {
               <label>Observaciones <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Indicaciones para cocina, si las hay" /></label>
               <button className="button button-primary button-full" type="button" disabled={ocupado || totalUnidades === 0} onClick={enviarPedido}>Enviar a cocina</button>
             </aside></div>
-            <section className="workspace-section" id="pedidos"><div className="section-heading"><div><span className="eyebrow">Seguimiento</span><h2>Pedidos de esta sesión</h2><p>Incluye pedidos listos y cancelados.</p></div><button className="button button-secondary" type="button" disabled={ocupado} onClick={actualizarPedidos}>Actualizar pedidos</button></div>
+            <section className="workspace-section" id="pedidos"><div className="section-heading"><div><span className="eyebrow">Seguimiento</span><h2>Pedidos de esta sesión</h2><p>Incluye pedidos listos y cancelados.</p></div></div>
               {pedidosMesa.length === 0 && <div className="empty-state"><strong>Aún no hay pedidos</strong><p>Los pedidos enviados aparecerán aquí.</p></div>}
               <div className="order-grid">{pedidosMesa.map((pedido) => <article className="order-card" key={pedido.id}>
                 <div className="order-card-header"><div><span className="eyebrow">Pedido de la sesión</span><h3>Pedido {pedido.numero_en_sesion}</h3></div><small>ID global #{pedido.id}</small></div>
@@ -362,12 +477,12 @@ function App() {
                 </li>)}</ul>
               </article>)}</div>
             </section>
-            <div id="cuenta"><Cuenta key={sesionId} sesionId={sesionId} autorizacion={autorizacion} revision={revisionCuenta} alCerrar={sesionCerrada} /></div>
+            <div id="cuenta"><Cuenta key={sesionId} sesionId={sesionId} autorizacion={autorizacion} revision={revisionCuenta} alCerrar={sesionCerrada} avisar={avisar} /></div>
           </>}
           </>}
         </>
       )}
-      <div aria-live="polite">{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
+      <div>{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
     </main>
     </div>
   )

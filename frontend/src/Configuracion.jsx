@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api.js'
 import { createLatestRequestGuard } from './latestRequest.js'
+import { createSingleFlight, INTERVALO_CONFIGURACION, useAutoRefresh } from './autoRefresh.js'
 
 function Mesas({ mesas, ocupado, operar, autorizacion }) {
   const [numero, setNumero] = useState('')
@@ -26,7 +27,12 @@ function Mesas({ mesas, ocupado, operar, autorizacion }) {
 
 function IngredienteFila({ ingrediente, ocupado, operar, autorizacion }) {
   const [cantidadNueva, setCantidadNueva] = useState(ingrediente.cantidad_disponible)
-  useEffect(() => setCantidadNueva(ingrediente.cantidad_disponible), [ingrediente.cantidad_disponible])
+  const cantidadAnterior = useRef(ingrediente.cantidad_disponible)
+  useEffect(() => {
+    setCantidadNueva((actual) => actual === cantidadAnterior.current
+      ? ingrediente.cantidad_disponible : actual)
+    cantidadAnterior.current = ingrediente.cantidad_disponible
+  }, [ingrediente.cantidad_disponible])
 
   async function ajustar(evento) {
     evento.preventDefault()
@@ -169,37 +175,50 @@ function Platos({ platos, ingredientes, ocupado, operar, autorizacion }) {
   </section>
 }
 
-export default function Configuracion({ autorizacion }) {
+export default function Configuracion({ autorizacion, avisar }) {
   const [mesas, setMesas] = useState([])
   const [ingredientes, setIngredientes] = useState([])
   const [platos, setPlatos] = useState([])
   const [ocupado, setOcupado] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
+  const [errorSincronizacion, setErrorSincronizacion] = useState(false)
   const guard = useRef(null)
   if (guard.current === null) guard.current = createLatestRequestGuard()
+  const consulta = useRef(null)
+  if (consulta.current === null) consulta.current = createSingleFlight()
+  function reportarError(texto) { setError(texto); avisar('error', texto) }
+  function reportarExito(texto) { setMensaje(texto); avisar('exito', texto) }
 
-  async function cargar() {
-    const vigente = guard.current.begin('configuracion')
-    try {
-      const [mesasNuevas, ingredientesNuevos, platosNuevos] = await Promise.all([
-        api('configuracion/mesas', autorizacion),
-        api('configuracion/ingredientes', autorizacion),
-        api('configuracion/platos', autorizacion),
-      ])
-      if (vigente()) {
-        setMesas(mesasNuevas)
-        setIngredientes(ingredientesNuevos)
-        setPlatos(platosNuevos)
+  function cargar({ silencioso = false, force = false } = {}) {
+    return consulta.current.run(autorizacion, async () => {
+      const vigente = guard.current.begin('configuracion')
+      try {
+        const [mesasNuevas, ingredientesNuevos, platosNuevos] = await Promise.all([
+          api('configuracion/mesas', autorizacion),
+          api('configuracion/ingredientes', autorizacion),
+          api('configuracion/platos', autorizacion),
+        ])
+        if (vigente()) {
+          setMesas(mesasNuevas)
+          setIngredientes(ingredientesNuevos)
+          setPlatos(platosNuevos)
+          setErrorSincronizacion(false)
+        }
+      } catch (fallo) {
+        if (vigente()) {
+          if (silencioso) setErrorSincronizacion(true)
+          else reportarError(fallo.message)
+        }
       }
-    } catch (fallo) {
-      if (vigente()) setError(fallo.message)
-    }
+    }, { force })
   }
+
+  useAutoRefresh(() => cargar({ silencioso: true }), INTERVALO_CONFIGURACION, !ocupado)
 
   useEffect(() => {
     guard.current.select('configuracion')
-    void cargar()
+    void cargar({ force: true })
     return () => guard.current.select(null)
   }, [autorizacion])
 
@@ -211,22 +230,23 @@ export default function Configuracion({ autorizacion }) {
     let correcto = false
     try {
       await accion()
-      setMensaje(textoExito)
+      reportarExito(textoExito)
       correcto = true
     } catch (fallo) {
-      setError(fallo.message)
+      reportarError(fallo.message)
     } finally {
-      await cargar()
+      await cargar({ force: true })
       setOcupado(false)
     }
     return correcto
   }
 
   return <>
-    <div className="cabecera"><h2>Configuración del restaurante</h2><button type="button" disabled={ocupado} onClick={() => { setError(''); void cargar() }}>Actualizar</button></div>
+    <div className="cabecera"><h2>Configuración del restaurante</h2></div>
+    {errorSincronizacion && <p className="nota" role="status">No se pudo actualizar la configuración. Se reintentará automáticamente.</p>}
     <Mesas mesas={mesas} ocupado={ocupado} operar={operar} autorizacion={autorizacion} />
     <Ingredientes ingredientes={ingredientes} ocupado={ocupado} operar={operar} autorizacion={autorizacion} />
     <Platos platos={platos} ingredientes={ingredientes} ocupado={ocupado} operar={operar} autorizacion={autorizacion} />
-    <div aria-live="polite">{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
+    <div>{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
   </>
 }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api.js'
 import { createLatestRequestGuard } from './latestRequest.js'
+import { createSingleFlight, INTERVALO_CONFIGURACION, useAutoRefresh } from './autoRefresh.js'
 import { etiquetaRol } from './etiquetas.js'
 
-export default function Empleados({ autorizacion }) {
+export default function Empleados({ autorizacion, avisar }) {
   const [empleados, setEmpleados] = useState([])
   const [username, setUsername] = useState('')
   const [nombre, setNombre] = useState('')
@@ -12,25 +13,38 @@ export default function Empleados({ autorizacion }) {
   const [ocupado, setOcupado] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
+  const [errorSincronizacion, setErrorSincronizacion] = useState(false)
   const guard = useRef(null)
   if (guard.current === null) guard.current = createLatestRequestGuard()
+  const consulta = useRef(null)
+  if (consulta.current === null) consulta.current = createSingleFlight()
+  function reportarError(texto) { setError(texto); avisar('error', texto) }
+  function reportarExito(texto) { setMensaje(texto); avisar('exito', texto) }
 
-  async function cargar() {
-    const vigente = guard.current.begin('empleados')
-    try {
-      const datos = await api('empleados', autorizacion)
-      if (vigente()) {
-        setEmpleados(datos)
-        setError('')
+  function cargar({ silencioso = false, force = false } = {}) {
+    return consulta.current.run(autorizacion, async () => {
+      const vigente = guard.current.begin('empleados')
+      try {
+        const datos = await api('empleados', autorizacion)
+        if (vigente()) {
+          setEmpleados(datos)
+          setErrorSincronizacion(false)
+          if (!silencioso) setError('')
+        }
+      } catch (fallo) {
+        if (vigente()) {
+          if (silencioso) setErrorSincronizacion(true)
+          else reportarError(fallo.message)
+        }
       }
-    } catch (fallo) {
-      if (vigente()) setError(fallo.message)
-    }
+    }, { force })
   }
+
+  useAutoRefresh(() => cargar({ silencioso: true }), INTERVALO_CONFIGURACION, !ocupado)
 
   useEffect(() => {
     guard.current.select('empleados')
-    void cargar()
+    void cargar({ force: true })
     return () => guard.current.select(null)
   }, [autorizacion])
 
@@ -48,10 +62,10 @@ export default function Empleados({ autorizacion }) {
       setUsername('')
       setNombre('')
       setPassword('')
-      setMensaje('Empleado creado y cuenta de acceso activada.')
-      await cargar()
+      reportarExito('Empleado creado y cuenta de acceso activada.')
+      await cargar({ force: true })
     } catch (fallo) {
-      setError(fallo.message)
+      reportarError(fallo.message)
     } finally {
       setOcupado(false)
     }
@@ -66,10 +80,10 @@ export default function Empleados({ autorizacion }) {
       await api(`empleados/${empleado.id}`, autorizacion, {
         method: 'PATCH', body: JSON.stringify({ activo: !empleado.activo }),
       })
-      setMensaje(empleado.activo ? 'Cuenta desactivada.' : 'Cuenta activada.')
-      await cargar()
+      reportarExito(empleado.activo ? 'Cuenta desactivada.' : 'Cuenta activada.')
+      await cargar({ force: true })
     } catch (fallo) {
-      setError(fallo.message)
+      reportarError(fallo.message)
     } finally {
       setOcupado(false)
     }
@@ -90,7 +104,8 @@ export default function Empleados({ autorizacion }) {
       </form>
     </section>
     <section className="panel">
-      <div className="cabecera"><h2>Empleados</h2><button type="button" disabled={ocupado} onClick={cargar}>Actualizar</button></div>
+      <div className="cabecera"><h2>Empleados</h2></div>
+      {errorSincronizacion && <p className="nota" role="status">No se pudo actualizar el personal. Se reintentará automáticamente.</p>}
       {empleados.length === 0 && <p>No hay empleados registrados.</p>}
       <ul className="lista-items empleados">
         {empleados.map((empleado) => <li key={empleado.id}>
@@ -99,6 +114,6 @@ export default function Empleados({ autorizacion }) {
         </li>)}
       </ul>
     </section>
-    <div aria-live="polite">{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
+    <div>{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
   </>
 }

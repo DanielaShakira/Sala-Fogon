@@ -187,6 +187,46 @@ def calcular_estado_general(items):
     return "EN_CURSO"
 
 
+def representar_pedidos(pedidos):
+    """Number orders within each session, including fully ready or cancelled ones."""
+    resultado = []
+    numeros_por_sesion = {}
+    for pedido in pedidos:
+        numero = numeros_por_sesion.get(pedido.sesion_id, 0) + 1
+        numeros_por_sesion[pedido.sesion_id] = numero
+        items = list(pedido.items.all())
+        resultado.append({
+            "id": pedido.id,
+            "sesion_id": pedido.sesion_id,
+            "mesa_numero": pedido.sesion.mesa.numero,
+            "numero_en_sesion": numero,
+            "fecha_hora_creacion": pedido.fecha_hora_creacion,
+            "estado_general": calcular_estado_general(items),
+            "items": [
+                {**representar_item(item), "pagado": hasattr(item, "asignacion_pago")}
+                for item in items
+            ],
+        })
+    return resultado
+
+
+def consulta_pedidos(sesiones):
+    return Pedido.objects.filter(sesion__in=sesiones).select_related(
+        "sesion__mesa"
+    ).prefetch_related(
+        Prefetch("items", queryset=ItemPedido.objects.select_related(
+            "plato", "asignacion_pago"
+        ).order_by("id"))
+    ).order_by("sesion_id", "fecha_hora_creacion", "id")
+
+
+class MisPedidosActivosView(VistaMesero):
+    def get(self, request):
+        perfil = mesero_autenticado(request)
+        sesiones = Sesion.objects.filter(mesero=perfil, fecha_hora_fin__isnull=True)
+        return Response(representar_pedidos(consulta_pedidos(sesiones)))
+
+
 class PedidosSesionView(VistaMesero):
     def get(self, request, sesion_id):
         perfil = mesero_autenticado(request)
@@ -195,23 +235,7 @@ class PedidosSesionView(VistaMesero):
             raise NotFound("La sesión no existe.")
         if sesion.mesero_id != perfil.id:
             raise PermissionDenied("La sesión pertenece a otro mesero.")
-        pedidos = Pedido.objects.filter(sesion=sesion).prefetch_related(
-            Prefetch("items", queryset=ItemPedido.objects.select_related("plato", "asignacion_pago").order_by("id"))
-        ).order_by("fecha_hora_creacion", "id")
-        resultado = []
-        for numero, pedido in enumerate(pedidos, start=1):
-            items = list(pedido.items.all())
-            resultado.append({
-                "id": pedido.id,
-                "numero_en_sesion": numero,
-                "fecha_hora_creacion": pedido.fecha_hora_creacion,
-                "estado_general": calcular_estado_general(items),
-                "items": [
-                    {**representar_item(item), "pagado": hasattr(item, "asignacion_pago")}
-                    for item in items
-                ],
-            })
-        return Response(resultado)
+        return Response(representar_pedidos(consulta_pedidos(Sesion.objects.filter(pk=sesion.id))))
 
 
 class CuentaSesionView(VistaMesero):

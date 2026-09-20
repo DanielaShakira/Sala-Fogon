@@ -134,6 +134,75 @@ class FlujoMeseroTests(TestCase):
         self.ingrediente.save(update_fields=["activo"])
         self.assertFalse(next(p for p in self.client.get("/api/platos/").data if p["id"] == self.plato_a.id)["disponible"])
 
+    def test_active_orders_feed_contains_only_authenticated_waiter_sessions(self):
+        propia = Sesion.objects.create(mesa=self.mesa, mesero=self.mesero)
+        otra_mesa = Mesa.objects.create(numero=11)
+        segunda = Sesion.objects.create(mesa=otra_mesa, mesero=self.mesero)
+        cerrada = Sesion.objects.create(
+            mesa=Mesa.objects.create(numero=12), mesero=self.mesero,
+            fecha_hora_fin=timezone.now(),
+        )
+        otra_cuenta = get_user_model().objects.create_user("otro_mesero_feed", password="clave")
+        otro_mesero = Usuario.objects.create(
+            cuenta_acceso=otra_cuenta, nombre="Otro mesero", rol=Usuario.Rol.MESERO,
+        )
+        ajena = Sesion.objects.create(mesa=Mesa.objects.create(numero=13), mesero=otro_mesero)
+
+        primero = Pedido.objects.create(sesion=propia)
+        segundo = Pedido.objects.create(sesion=propia)
+        tercero = Pedido.objects.create(sesion=segunda)
+        excluido_cerrado = Pedido.objects.create(sesion=cerrada)
+        excluido_ajeno = Pedido.objects.create(sesion=ajena)
+        for pedido, estado in (
+            (primero, ItemPedido.Estado.EN_PREPARACION),
+            (segundo, ItemPedido.Estado.EN_COLA),
+            (tercero, ItemPedido.Estado.LISTO),
+            (excluido_cerrado, ItemPedido.Estado.LISTO),
+            (excluido_ajeno, ItemPedido.Estado.LISTO),
+        ):
+            ItemPedido.objects.create(
+                pedido=pedido, plato=self.plato_a,
+                precio_unitario=self.plato_a.precio, estado=estado,
+            )
+
+        response = self.client.get("/api/mis-pedidos-activos/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([p["id"] for p in response.data], [primero.id, segundo.id, tercero.id])
+        self.assertEqual([p["numero_en_sesion"] for p in response.data], [1, 2, 1])
+        self.assertEqual([p["mesa_numero"] for p in response.data], [10, 10, 11])
+        self.assertEqual([p["items"][0]["estado"] for p in response.data], [
+            ItemPedido.Estado.EN_PREPARACION, ItemPedido.Estado.EN_COLA, ItemPedido.Estado.LISTO,
+        ])
+        self.autenticar("otro_mesero_feed", "clave")
+        self.assertEqual([p["id"] for p in self.client.get("/api/mis-pedidos-activos/").data], [excluido_ajeno.id])
+
+    def test_active_orders_feed_requires_waiter_role(self):
+        self.client.credentials()
+        self.assertEqual(self.client.get("/api/mis-pedidos-activos/").status_code, 401)
+        acceso = get_user_model().objects.create_user("cocina_feed", password="clave")
+        Usuario.objects.create(cuenta_acceso=acceso, nombre="Cocina", rol=Usuario.Rol.COCINERO)
+        self.autenticar("cocina_feed", "clave")
+        self.assertEqual(self.client.get("/api/mis-pedidos-activos/").status_code, 403)
+
+    def test_kitchen_ready_transition_is_visible_in_waiter_feed(self):
+        sesion = Sesion.objects.create(mesa=self.mesa, mesero=self.mesero)
+        pedido = Pedido.objects.create(sesion=sesion)
+        item = ItemPedido.objects.create(
+            pedido=pedido, plato=self.plato_a,
+            precio_unitario=self.plato_a.precio,
+            estado=ItemPedido.Estado.EN_PREPARACION,
+        )
+        self.assertEqual(self.client.get("/api/mis-pedidos-activos/").data[0]["items"][0]["estado"],
+                         ItemPedido.Estado.EN_PREPARACION)
+        acceso = get_user_model().objects.create_user("cocina_cambio", password="clave")
+        Usuario.objects.create(cuenta_acceso=acceso, nombre="Cocina", rol=Usuario.Rol.COCINERO)
+        self.autenticar("cocina_cambio", "clave")
+        self.assertEqual(self.client.post(f"/api/items/{item.id}/listo/").status_code, 200)
+        self.autenticar()
+        response = self.client.get("/api/mis-pedidos-activos/")
+        self.assertEqual(response.data[0]["items"][0]["estado"], ItemPedido.Estado.LISTO)
+        self.assertEqual(response.data[0]["mesa_numero"], self.mesa.numero)
+
     def test_empty_and_non_integer_or_non_positive_units_are_rejected(self):
         sesion_id = self.abrir().data["id"]
         self.assertEqual(self.enviar(sesion_id, []).status_code, 400)
