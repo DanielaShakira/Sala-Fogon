@@ -134,7 +134,8 @@ Permanecerán registrados con estado `CANCELADO`, pero no participarán en la pr
 había reservado ingredientes, las cantidades comprometidas **deberán**
 devolverse a la disponibilidad. La frase anterior refleja la formulación
 inicial; esta precisión coincide con la regla de `AGENTS.md`. La lógica
-de cancelación todavía no está implementada.
+de cancelación todavía no estaba implementada al registrar esa precisión;
+se implementó posteriormente durante la sesión 3.
 
 **Motivo:** conservar el registro del pedido permite mantener trazabilidad sin considerar como consumo una unidad que fue cancelada.
 
@@ -252,7 +253,8 @@ falta algún ingrediente para el conjunto de unidades solicitadas, se
 rechazará el pedido completo. La selección se mantiene temporalmente
 mientras se construye y no reserva ingredientes antes del envío. Mantener
 esa selección en React es una decisión de implementación, no un nuevo
-supuesto funcional. Estas validaciones de envío aún no están implementadas.
+supuesto funcional. En esa etapa estas validaciones de envío aún no estaban
+implementadas; se incorporaron posteriormente durante la sesión 3.
 
 **Motivo:** evita que dos operaciones basadas en información desactualizada comprometan las mismas existencias y permite representar la reserva de ingredientes sin crear una entidad adicional de inventario reservado.
 
@@ -269,3 +271,37 @@ El estado de `Cuenta` se deriva de la asignación de los ítems no cancelados a 
 En `Sesión` tampoco se almacenará un campo `estado`: una sesión se considera activa cuando `fecha_hora_fin` es `NULL` y cerrada cuando posee una fecha de finalización.
 
 **Motivo:** evitar duplicación de información y reducir la posibilidad de inconsistencias entre datos almacenados y datos derivados.
+
+---
+
+## A-021 — Los pagos se registran después de finalizar la preparación
+
+Los clientes realizan sus pedidos, cocina prepara los platos y después se
+registra el pago de la cuenta. Solo podrán registrarse pagos cuando **todos**
+los `ItemPedido` no cancelados de la sesión estén `LISTO`.
+
+Si existe algún ítem `EN_COLA` o `EN_PREPARACION`, se rechazará el pago,
+aunque las unidades seleccionadas para ese pago ya estén listas. Una vez
+cumplida esta condición, la cuenta podrá dividirse en varios pagos
+parciales según A-008 y A-009. Si se agrega un pedido nuevo durante una
+sesión con pagos parciales, los pagos siguientes deberán esperar a que
+sus ítems no cancelados también estén listos.
+
+**Motivo:** refleja el funcionamiento adoptado para el restaurante y
+evita iniciar nuevos pagos mientras hay preparación pendiente.
+
+---
+
+## A-022 — Un ítem asignado a un pago no puede cancelarse
+
+Un `ItemPedido` que ya tenga una `AsignacionPago` no podrá cancelarse.
+La regla se comprueba incluso si, por datos previos o inconsistentes, ese
+ítem aún figura `EN_COLA`. Una cancelación rechazada no devuelve
+ingredientes.
+
+En el flujo ordinario, A-021 impide pagar ítems en cola; esta comprobación
+adicional protege la coherencia de los pagos ya registrados. No se
+contemplan anulaciones de pagos.
+
+**Motivo:** evita dejar un pago asociado a un consumo cancelado cuyo
+importe ya no formaría parte de la cuenta.

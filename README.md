@@ -1,6 +1,6 @@
 # Sala Fogón
 
-Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene Django REST Framework, React/Vite, PostgreSQL y el modelo relacional. El mesero puede abrir sesiones, consultar el catálogo, enviar pedidos y cancelar unidades en cola; el cocinero puede consultar la cola y avanzar cada unidad hasta `LISTO`.
+Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene Django REST Framework, React/Vite, PostgreSQL y el modelo relacional. El mesero puede abrir sesiones, consultar el catálogo, enviar pedidos, cancelar unidades en cola, registrar pagos parciales por unidad y cerrar sesiones pagadas; el cocinero puede consultar la cola y avanzar cada unidad hasta `LISTO`.
 
 ## Requisitos
 
@@ -75,7 +75,7 @@ cd frontend
 npm run build
 ```
 
-Para comprobar la protección que descarta respuestas antiguas al cambiar de sesión o actualizar pedidos, ejecuta `npm test` dentro de `frontend/`. Utiliza el runner incluido en Node.js; no instala dependencias adicionales.
+Para comprobar la protección que descarta respuestas antiguas al cambiar de sesión o actualizar pedidos y el cálculo de importes en React, ejecuta `npm test` dentro de `frontend/`. Utiliza el runner incluido en Node.js; no instala dependencias adicionales.
 
 ## Organización
 
@@ -90,7 +90,7 @@ Para comprobar la protección que descarta respuestas antiguas al cambiar de ses
 
 Los precios usan `DecimalField(max_digits=12, decimal_places=2)`, para conservar centavos sin errores de coma flotante. Las cantidades abstractas de ingredientes usan `DecimalField(max_digits=12, decimal_places=3)`, que permite milésimas de porción. Esto admite precios de hasta 9.999.999.999,99 y cantidades de hasta 999.999.999,999 por registro. El backend rechaza valores negativos mediante restricciones de base de datos; las recetas y composiciones comprometidas requieren cantidades mayores que cero.
 
-La base limita a una sesión activa por mesa con una unicidad condicionada a `fecha_hora_fin IS NULL`. También garantiza una cuenta por sesión, una asignación de pago por ítem y la unicidad de ingredientes en cada receta o composición de ítem. Los estados de `Sesion`, `Pedido` y `Cuenta` no se almacenan. Las operaciones de mesero y cocina validan el rol en el backend; las transiciones y la devolución de ingredientes se ejecutan en transacciones. La división de cuentas y los pagos continúan pendientes.
+La base limita a una sesión activa por mesa con una unicidad condicionada a `fecha_hora_fin IS NULL`. También garantiza una cuenta por sesión, una asignación de pago por ítem y la unicidad de ingredientes en cada receta o composición de ítem. Los estados de `Sesion`, `Pedido` y `Cuenta` no se almacenan. Las operaciones de mesero y cocina validan el rol en el backend; las transiciones, la devolución de ingredientes, los pagos y el cierre se ejecutan en transacciones.
 
 Para ejecutar las pruebas estructurales y funcionales sobre `test_sala_fogon`, desde la raíz del repositorio:
 
@@ -126,7 +126,7 @@ Las rutas anteriores, salvo `/api/me/`, requieren HTTP Basic y el rol `MESERO`. 
 
 En Django Admin crea una cuenta de acceso normal activa y un perfil `Usuario` vinculado con rol `COCINERO`; no necesita `is_staff`. En React, entra con sus credenciales. La cola muestra los pedidos pendientes de más antiguos a más recientes, agrupados por pedido y con su mesa, observaciones e ítems en `EN_COLA` o `EN_PREPARACION`. Pulsa **Iniciar** en una unidad en cola y después **Marcar listo**. La vista se actualiza tras cada operación; **Actualizar** consulta también cambios hechos desde otra pestaña. No hay actualización en tiempo real ni WebSockets.
 
-El mesero ve todos los pedidos de la sesión seleccionada, incluidos los completados y cancelados. Se muestran como **Pedido 1**, **Pedido 2**, etc., según fecha de creación e ID dentro de esa sesión; el ID global permanece pequeño a la derecha para identificar el registro real. Puede pulsar **Actualizar** y cancelar una unidad que aún aparezca en `EN_COLA`. Al cambiar de mesa se vacía la lista anterior y se ignoran las respuestas de consultas antiguas. El backend vuelve a comprobar el estado: si cocina la inició entretanto, rechaza la cancelación con HTTP 409. Una cancelación aceptada conserva el ítem en `CANCELADO` y devuelve las cantidades registradas en su composición histórica, incluso si la receta actual del plato ha cambiado. Una segunda cancelación devuelve HTTP 409 y no repite la devolución.
+El mesero ve todos los pedidos de la sesión seleccionada, incluidos los completados y cancelados. Se muestran como **Pedido 1**, **Pedido 2**, etc., según fecha de creación e ID dentro de esa sesión; el ID global permanece pequeño a la derecha para identificar el registro real. Puede pulsar **Actualizar** y cancelar una unidad que aún aparezca en `EN_COLA` y no esté asignada a un pago. Al cambiar de mesa se vacía la lista anterior y se ignoran las respuestas de consultas antiguas. El backend vuelve a comprobar el estado y la asignación de pago: si cocina la inició entretanto o el ítem ya fue pagado, rechaza la cancelación con HTTP 409. Una cancelación aceptada conserva el ítem en `CANCELADO` y devuelve las cantidades registradas en su composición histórica, incluso si la receta actual del plato ha cambiado. Una segunda cancelación devuelve HTTP 409 y no repite la devolución.
 
 El estado general se **calcula al consultar**, sin columna adicional en `Pedido`: `CANCELADO` si todos los ítems están cancelados, `COMPLETO` si todos los no cancelados están listos, `EN_COLA` si todos los no cancelados siguen en cola y `EN_CURSO` para los demás avances parciales. Mesero y cocina muestran ese resumen junto con los estados individuales. Cocina conserva el ID global y solo muestra pedidos con ítems `EN_COLA` o `EN_PREPARACION`; por eso un pedido completamente listo o cancelado desaparece de su cola, pero sigue visible en la lista de su sesión para el mesero.
 
@@ -138,6 +138,20 @@ El estado general se **calcula al consultar**, sin columna adicional en `Pedido`
 | `POST /api/items/<id>/listo/` | `COCINERO` | Pasar de `EN_PREPARACION` a `LISTO`. |
 | `POST /api/items/<id>/cancelar/` | `MESERO` propietario | Pasar de `EN_COLA` a `CANCELADO` y devolver ingredientes. |
 
-Las tres operaciones de cambio de estado bloquean la misma fila de `ItemPedido` antes de validar el estado vigente; cancelar también bloquea los ingredientes antes de devolverlos. `Pedido` no guarda un estado ni existe una tabla para la cola. La cuenta y los pagos todavía no tienen flujo operativo.
+Las tres operaciones de cambio de estado bloquean la fila de `ItemPedido` antes de validar el estado vigente; cancelar bloquea primero la sesión y después el ítem y los ingredientes, en ese orden. `Pedido` no guarda un estado ni existe una tabla para la cola.
 
-La prueba `restaurant` usa explícitamente `test_sala_fogon` y reutiliza esa base con `--keepdb`; no escribe datos de prueba en `sala_fogon`. Dos pruebas de carrera lanzan cancelación frente a inicio de preparación y dos cancelaciones a la vez, respectivamente. Verifican procesos PostgreSQL distintos, una sola operación aceptada y existencias finales correctas; no miden cuánto tiempo espera una solicitud en el bloqueo. Aún quedan pendientes pruebas automatizadas de navegador y de aperturas o envíos de pedidos concurrentes.
+## Cuenta, pagos parciales y cierre
+
+En la vista del mesero, la sección **Cuenta de la sesión** muestra cada unidad solicitada con su precio histórico, si está pendiente o en qué pago quedó incluida. Las unidades canceladas permanecen visibles como historial y no cuentan en el consumo. La cuenta puede consultarse mientras cocina trabaja, pero el pago solo se habilita cuando **todos los ítems no cancelados de la sesión estén `LISTO`**. Entonces selecciona cualquier combinación de unidades pendientes, incluso de pedidos distintos, para ver el importe y pulsar **Registrar pago**. Puedes registrar varios pagos y repartir distintas unidades del mismo plato entre ellos. La pantalla actualiza el saldo después de cada operación. **Cerrar sesión** se habilita cuando ya no quedan unidades no canceladas sin pago; la mesa queda disponible para una nueva atención.
+
+Los importes de la API se calculan a partir de `ItemPedido.precio_unitario`; ni `Cuenta` ni `Pago` guardan montos. React presenta una suma en centavos para que el mesero revise la selección, pero el backend vuelve a calcularla y no acepta un monto del cliente como fuente de verdad. Los ítems se asignan a un solo pago mediante `AsignacionPago`. Las escrituras de pedidos, pagos, cancelación y cierre toman primero el bloqueo de la sesión; los pagos y cancelaciones bloquean después los ítems. Así el cierre no puede validar la cuenta y dejar entrar un nuevo pedido a esa misma sesión.
+
+| Método y ruta | Rol | Función |
+| --- | --- | --- |
+| `GET /api/sesiones/<id>/cuenta/` | `MESERO` propietario | Consultar pedidos, ítems facturables y cancelados, pagos y saldos derivados. También permite consultar una sesión ya cerrada. |
+| `POST /api/sesiones/<id>/pagos/` | `MESERO` propietario | Registrar un pago con `{"item_ids": [1, 2]}`. Todos los ítems no cancelados de la sesión deben estar `LISTO`; los seleccionados deben ser unidades pendientes de esa cuenta abierta. |
+| `POST /api/sesiones/<id>/cerrar/` | `MESERO` propietario | Cerrar cuando no queden ítems pendientes de pago. Si los hay, devuelve HTTP 409 y `item_ids_pendientes`. |
+
+Las pruebas funcionales y de concurrencia usan exclusivamente `test_sala_fogon` con conexiones PostgreSQL independientes. Verifican la asignación única de ítems, que una cancelación en cola prevalece sobre un pago aún no habilitado, el cierre frente a un pedido nuevo y dos cierres simultáneos. La estudiante probó manualmente en el navegador el flujo de cuenta, pagos parciales y cierre. React muestra cada plato pedido en su propia fila sin exponer el ID de su ítem; esos identificadores siguen utilizándose internamente para operar cada registro individual. La compilación y las pruebas JavaScript terminaron correctamente; aún no hay una prueba automatizada de navegador. Las reglas de pago están registradas en `ASSUMPTIONS.md` y `BITACORA-IA.md`.
+
+La prueba `restaurant` usa explícitamente `test_sala_fogon` y reutiliza esa base con `--keepdb`; no escribe datos de prueba en `sala_fogon`. Dos pruebas de carrera lanzan cancelación frente a inicio de preparación y dos cancelaciones a la vez, respectivamente. Verifican procesos PostgreSQL distintos, una sola operación aceptada y existencias finales correctas; no miden cuánto tiempo espera una solicitud en el bloqueo. Aún quedan pendientes pruebas automatizadas de navegador, de dos aperturas simultáneas y de dos envíos de pedidos simultáneos.

@@ -396,10 +396,106 @@ persistente y generaron tarjetas de ejecución prolongada; las pruebas
 posteriores del modelo se hicieron con comandos secuenciales que
 terminan por sí solos.
 
-No se ha automatizado una prueba de la interfaz en navegador ni se ha
-verificado la instalación desde cero en otra máquina. Tampoco se han
-probado aperturas simultáneas reales de sesión ni reservas concurrentes
-de ingredientes. Los modelos de pedidos, cocina y pagos existen, pero sus
-operaciones, transiciones, controles de roles, reserva y devolución de
-ingredientes, y validaciones de cierre y pago siguen pendientes de
-implementación y prueba.
+Al cierre de esta primera etapa no se había automatizado una prueba de
+la interfaz en navegador ni verificado la instalación desde cero en
+otra máquina. Tampoco se habían probado aperturas simultáneas reales de
+sesión ni reservas concurrentes de ingredientes. Los modelos de pedidos,
+cocina y pagos existían, pero sus operaciones, transiciones, controles
+de roles, reserva y devolución de ingredientes, y validaciones de cierre
+y pago todavía estaban pendientes de implementación y prueba.
+
+### Incrementos funcionales posteriores de la sesión 3
+
+La estudiante autorizó por separado los incrementos de mesero, cocina y
+cancelaciones, y cuentas con pagos parciales y cierre. Codex propuso e
+implementó servicios transaccionales, endpoints con validación de rol y
+una interfaz React sencilla. Para el primer flujo se decidió mantener el
+pedido temporalmente en React y persistirlo solo al enviarlo a cocina;
+el backend valida el consumo conjunto, descuenta ingredientes y registra
+la composición histórica de cada unidad en una sola transacción. La
+estudiante lo probó manualmente antes de publicar ese avance.
+
+Para cocina, Codex propuso derivar la cola de los estados de los ítems,
+permitir las transiciones independientes
+`EN_COLA → EN_PREPARACION → LISTO` y devolver ingredientes históricos al
+cancelar desde `EN_COLA`. Se añadieron bloqueos y pruebas con conexiones
+PostgreSQL independientes para las carreras entre preparación y
+cancelación y entre dos cancelaciones. La estudiante confirmó el flujo
+manualmente y autorizó su publicación. La interfaz del mesero conserva
+los pedidos completados y cancelados, muestra su número dentro de la
+sesión y protege las consultas frente a respuestas antiguas.
+
+En el incremento de cuentas, Codex propuso calcular consumo, pagos y
+saldo desde los precios históricos de `ItemPedido` y las asignaciones,
+sin guardar montos en `Cuenta` ni `Pago`; también propuso bloquear la
+sesión y los ítems para registrar pagos o cerrar la atención. La
+interfaz permite seleccionar unidades de pedidos distintos, ver un
+importe calculado en centavos y registrar varios pagos parciales. El
+backend calcula nuevamente los importes y rechaza selecciones vacías,
+duplicadas, canceladas, ajenas a la sesión o ya pagadas. El cierre
+comprueba que no queden unidades no canceladas sin pago y se coordina
+con el envío de nuevos pedidos mediante el bloqueo de la sesión.
+
+#### Duda y decisión sobre pagos y cancelaciones
+
+Codex detectó que las reglas previas permitían cancelar un ítem
+`EN_COLA`, pero no definían qué hacer si ese ítem ya estaba asignado a
+un pago. Propuso impedir la cancelación de ítems pagados porque no existe
+anulación de pagos. La estudiante aclaró su interpretación del
+restaurante: los clientes primero piden, cocina termina la preparación
+y después se registran los pagos. Decidió que **no se puede registrar
+ningún pago mientras exista un ítem no cancelado `EN_COLA` o
+`EN_PREPARACION` en la sesión**, aunque los ítems seleccionados ya estén
+listos. Una vez que todos están `LISTO`, pueden registrarse pagos
+parciales. Además, aprobó rechazar la cancelación de cualquier ítem que
+ya tenga una asignación de pago, como protección adicional.
+
+La primera versión del nuevo servicio de pagos solo exigía que los
+ítems seleccionados no estuvieran cancelados; por tanto, habría
+permitido pagar unidades en cola. Tras la aclaración de la estudiante,
+Codex modificó el servicio para bloquear y revisar todos los ítems de
+la sesión antes de crear el pago. La consulta de cuenta indica si el
+pago está habilitado y React desactiva la selección mientras cocina
+continúa. No se añadieron entidades, campos ni una condición distinta
+para cerrar: el cierre sigue dependiendo de que todo el consumo no
+cancelado esté pagado.
+
+#### Verificaciones y dificultades de los incrementos
+
+- La suite completa terminó con **56 pruebas Django aprobadas**, usando
+  exclusivamente `test_sala_fogon` con `--keepdb`. Incluye las pruebas
+  previas y las nuevas de cuentas, precios históricos, pagos parciales,
+  reversión ante fallos, cierre y carreras. Las pruebas de concurrencia
+  emplean conexiones y procesos PostgreSQL independientes y comprueban
+  también el estado final de pagos, ítems e ingredientes; no miden el
+  rendimiento ni demuestran ausencia de toda carrera posible.
+- Pasaron **4 pruebas JavaScript** del descarte de respuestas antiguas y
+  del cálculo de importes en centavos. `manage.py check` no reportó
+  errores; `makemigrations --check --dry-run` no detectó cambios y
+  `migrate --check` no encontró migraciones pendientes. La compilación
+  de React con `npm run build` terminó correctamente.
+- En una ejecución intermedia falló una prueba nueva porque comparaba
+  identificadores devueltos por una consulta sin orden explícito; se
+  corrigió el test con `order_by("id")` y pasó la suite completa. El
+  runner de Node y Vite encontraron `EPERM` al crear procesos hijos
+  dentro del aislamiento de comandos; las verificaciones pasaron al
+  ejecutarlas con acceso autorizado fuera de ese aislamiento. No se
+  iniciaron servidores persistentes para esas comprobaciones.
+- La estudiante realizó las pruebas manuales del nuevo flujo de cuenta,
+  pagos parciales y cierre en el navegador y confirmó que el
+  funcionamiento observado es correcto. También había probado
+  manualmente los incrementos anteriores.
+
+Siguen pendientes una prueba automatizada de la interfaz en navegador,
+la instalación desde cero en otra máquina y pruebas específicas de dos
+aperturas simultáneas de la misma mesa y de dos envíos simultáneos de
+pedidos. Los apartados «Actualización de la sesión 3» de los ADR
+describen el hito inicial de modelo y entorno; estos incrementos
+posteriores no cambiaron las decisiones arquitectónicas aceptadas.
+Tras la prueba manual, la estudiante solicitó retirar el rótulo visual
+«Unidad» y su identificador en React. Codex quitó esos identificadores
+de las filas de mesero, cocina y cuenta, y de los mensajes visibles;
+los IDs permanecen en la API y como claves internas para conservar las
+operaciones independientes. Las cuatro pruebas JavaScript y la
+compilación de React volvieron a pasar tras el ajuste. Este cambio de
+presentación no modificó el modelo relacional ni las reglas de negocio.

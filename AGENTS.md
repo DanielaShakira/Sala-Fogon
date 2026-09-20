@@ -325,6 +325,8 @@ item_pedido_id
 -   Los ítems cancelados permanecen registrados y no cuentan para
     preparación ni cuenta.
 -   Un ítem solo puede cancelarse si está `EN_COLA`.
+-   Un ítem asignado a un pago no puede cancelarse, aunque todavía figure
+    `EN_COLA`.
 -   Los ingredientes se validan y descuentan cuando el pedido es enviado
     a cocina.
 -   Si se cancela un ítem que había reservado ingredientes, las
@@ -336,6 +338,8 @@ item_pedido_id
 -   Una mesa no puede tener dos sesiones activas simultáneamente.
 -   Una sesión solo puede cerrarse cuando la cuenta está completamente
     pagada.
+-   Los pagos solo pueden registrarse cuando todos los ítems no cancelados
+    de la sesión están `LISTO`.
 -   Una cuenta reúne todos los pedidos de su sesión.
 -   Un mismo plato solicitado varias veces se representa mediante varios
     `ItemPedido`.
@@ -347,11 +351,10 @@ item_pedido_id
 
 ## Consulta requerida
 
-El sistema deberá ofrecer una consulta que represente la cola de cocina
-ordenada por antigüedad y con los ítems pendientes agrupados por pedido.
-
-La implementación concreta de esta consulta dependerá de la tecnología
-seleccionada.
+El sistema ofrece una consulta de la cola de cocina ordenada por
+antigüedad y con los ítems pendientes agrupados por pedido. Se calcula
+desde los estados de `ItemPedido`, sin entidad ni estado adicional de
+cola.
 
 ## Fuera de alcance
 
@@ -434,8 +437,35 @@ corresponde. Los precios usan dos decimales y las cantidades abstractas de
 ingredientes usan tres. Los estados de `Sesion`, `Pedido` y `Cuenta`
 continúan sin almacenarse como columnas independientes.
 
-La verificación realizada cubre conexión local, migraciones y trece
-pruebas estructurales sobre `test_sala_fogon`. La creación y envío de
-pedidos, la reserva y devolución de ingredientes, la consulta y avance
-de cocina, el registro operativo de pagos y las validaciones de roles
-siguen pendientes de implementación y prueba.
+La verificación de esta primera etapa cubrió conexión local, migraciones
+y trece pruebas estructurales sobre `test_sala_fogon`. En ese momento,
+la creación y envío de pedidos, la reserva y devolución de ingredientes,
+la operación de cocina, los pagos y las validaciones de roles estaban
+pendientes de implementación y prueba.
+
+## Estado funcional posterior de la sesión 3
+
+Ya funcionan la apertura de sesiones, el catálogo con disponibilidad
+calculada y el envío atómico de pedidos con descuento de ingredientes.
+El mesero consulta todos los pedidos de su sesión, incluidos los
+completados y cancelados; cocina consulta la cola pendiente y avanza cada
+ítem de `EN_COLA` a `EN_PREPARACION` y después a `LISTO`. La cancelación
+desde `EN_COLA` conserva el ítem y devuelve su composición histórica.
+
+El mesero responsable puede consultar la cuenta de la sesión, sus
+precios históricos, pagos y saldo derivados; asignar unidades concretas
+a varios pagos parciales y cerrar la sesión cuando todo el consumo no
+cancelado está pagado. El backend comprueba los roles y las reglas de
+negocio, incluida la preparación completa antes de registrar pagos.
+Las operaciones críticas utilizan transacciones y bloqueos de filas.
+No se añadieron estados o montos derivados a las entidades.
+
+La suite completa alcanzó 56 pruebas Django en `test_sala_fogon`; cuatro
+pruebas JavaScript, `manage.py check`, las comprobaciones de migraciones
+pendientes y la compilación de React también terminaron correctamente.
+La estudiante confirmó mediante pruebas manuales el funcionamiento de
+pedidos, cocina, cancelaciones, cuentas, pagos parciales y cierre.
+Continúan pendientes la verificación de instalación desde cero en otra
+máquina y una prueba automatizada de la interfaz en navegador. Los
+apartados iniciales de los ADR conservan el estado de la primera etapa
+de la sesión 3; este apartado describe el estado funcional posterior.
