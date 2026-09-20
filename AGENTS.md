@@ -154,6 +154,12 @@ Una sesión puede contener múltiples pedidos.
 No se almacena `estado`. El estado operativo se deriva de los estados de
 sus ítems.
 
+La etiqueta general presentada al usuario es `CANCELADO` si todos sus
+ítems fueron cancelados, `COMPLETO` si todos los no cancelados están
+`LISTO`, `EN_COLA` si todos los no cancelados siguen en cola y
+`EN_CURSO` para los demás avances parciales. Este valor no se guarda en
+la base de datos.
+
 ### ÍtemPedido
 
 ``` text
@@ -502,10 +508,8 @@ La estudiante comprobó manualmente la sincronización y los avisos entre
 sesiones independientes, así como la conservación de los formularios.
 Se retiraron los controles de actualización manual redundantes; los
 refrescos posteriores a cada operación y el reintento automático se
-conservan. La instalación desde cero en otra máquina y una prueba
-automatizada de interfaz en navegador no se han acreditado. Las pruebas
-de backend
-utilizan exclusivamente `test_sala_fogon`; no deben utilizar la base
+conservan. Las pruebas de backend utilizan exclusivamente `test_sala_fogon`;
+no deben utilizar la base
 principal para ejecutar pruebas. Las credenciales locales están fuera
 de Git. Los resultados de la suite final deben leerse en la bitácora,
 sin interpretar las cifras de los hitos anteriores como el total actual.

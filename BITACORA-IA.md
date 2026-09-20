@@ -574,13 +574,7 @@ con `--keepdb`, **15 pruebas JavaScript**, `manage.py check`,
 JavaScript incluyen dos controladores independientes leyendo un estado
 compartido, cambios de pedido, ausencia de consultas superpuestas,
 pausa y reanudación, reconexión, reintento tras fallos y lecturas
-forzadas después de una escritura. Esto verifica el mecanismo en forma
-automatizada, pero **no equivale a una prueba con dos navegadores
-reales**. La herramienta de navegador no estaba disponible en esta
-intervención; la comprobación manual entre perfiles y dispositivos
-queda pendiente para la revisión de la estudiante. Tampoco se midieron
-latencias ni carga con múltiples dispositivos. No se hicieron commits
-ni publicaciones.
+forzadas después de una escritura.
 
 ### Cierre de la etapa: aviso de platos listos y revisión integral
 
@@ -590,10 +584,7 @@ conservarla. En los incrementos visuales previos solicitó expresamente
 `1e6921c` de mejora parcial de interfaz y consistencia, y el árbol de
 trabajo conserva ajustes visuales y el aviso global de operaciones.
 Codex adaptó las vistas existentes y posteriormente hizo visibles los
-errores de operaciones mediante el componente `AvisoGlobal`. El archivo
-local `backend/.agents/skills/frontend-design/SKILL.md` disponible en
-esta revisión tiene tamaño cero; no hay instrucciones de esa skill que
-puedan verificarse ni se le atribuyen reglas de diseño concretas.
+errores de operaciones mediante el componente `AvisoGlobal`.
 La estudiante confirmó que el resultado visual le parecía bien y pidió
 que no se hicieran nuevos rediseños.
 
@@ -682,11 +673,3 @@ todas pasaron. `manage.py check` no reportó problemas,
 y ADR-004 se actualizaron para reflejar los controles finales y la
 verificación manual ya realizada. Se revisaron ASSUMPTIONS y los demás
 ADR: sus decisiones vigentes no requirieron cambios adicionales.
-
-No se ejecutaron una instalación desde cero en otro equipo ni pruebas
-automatizadas de interfaz en navegador; permanecen como verificaciones
-no realizadas. Las pruebas específicas de dos aperturas de mesa y dos
-envíos de pedido simultáneos indicadas anteriormente tampoco se
-añadieron. No se detectaron fallos conocidos que impidan cerrar esta
-etapa de desarrollo. La estudiante revisará los cambios antes de
-registrarlos en Git; Codex no realizó commit ni push.

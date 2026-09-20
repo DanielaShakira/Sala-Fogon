@@ -66,6 +66,12 @@ mesa y la asignación única de pago por ítem. La migración `0002` retiró
 el puntaje de carga de `Plato` por decisión posterior de alcance, sin
 reescribir la migración inicial.
 
+El ajuste absoluto de existencias por ADMIN bloquea el ingrediente y
+compara su cantidad vigente con la `cantidad_esperada` enviada por la
+interfaz. Si cambió entretanto, rechaza el ajuste con HTTP 409 y devuelve
+la cantidad actual; así evita sobrescribir un descuento concurrente de
+un pedido.
+
 Las pruebas de concurrencia posteriores usan conexiones PostgreSQL
 independientes para cancelaciones, preparación, pagos y cierre, y
 comprueban el estado final de los registros. No equivalen a una prueba
