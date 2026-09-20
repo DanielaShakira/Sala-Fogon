@@ -29,6 +29,8 @@ button:disabled { cursor: not-allowed; }
 .pedido p { margin: 0.25rem 0; }
 .lista-items { list-style: none; padding: 0; }
 .lista-items li { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0; border-top: 1px solid #eeeeee; }
+.seleccion-pago { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; white-space: nowrap; }
+.seleccion-pago input { width: auto; margin: 0; }
 .nota, small { color: #555; }
 .ok { color: #116633; }
 .error { color: #a22626; }

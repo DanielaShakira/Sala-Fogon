@@ -24,3 +24,15 @@ class EnvioPedidoSerializer(serializers.Serializer):
     sesion_id = EnteroPositivoEstricto(min_value=1)
     observaciones = serializers.CharField(required=False, allow_blank=True, default="")
     items = UnidadSolicitadaSerializer(many=True, allow_empty=False)
+
+
+class RegistroPagoSerializer(serializers.Serializer):
+    item_ids = serializers.ListField(
+        child=EnteroPositivoEstricto(min_value=1, max_value=9223372036854775807),
+        allow_empty=False,
+    )
+
+    def validate_item_ids(self, item_ids):
+        if len(item_ids) != len(set(item_ids)):
+            raise serializers.ValidationError("No se puede incluir dos veces el mismo ítem.")
+        return item_ids

@@ -1,26 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { createLatestRequestGuard } from './latestRequest.js'
+import { api } from './api.js'
+import Cuenta from './Cuenta.jsx'
 import './App.css'
 
 function basicHeader(usuario, clave) {
   const bytes = new TextEncoder().encode(`${usuario}:${clave}`)
   return `Basic ${btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))}`
-}
-
-async function api(ruta, autorizacion, opciones = {}) {
-  const respuesta = await fetch(`/api/${ruta}/`, {
-    ...opciones,
-    headers: {
-      Authorization: autorizacion,
-      ...(opciones.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-  })
-  const datos = await respuesta.json()
-  if (!respuesta.ok) {
-    const detalle = datos.detail || JSON.stringify(datos)
-    throw new Error(typeof detalle === 'string' ? detalle : JSON.stringify(detalle))
-  }
-  return datos
 }
 
 const etiquetasPedido = {
@@ -64,8 +50,8 @@ function Cocina({ autorizacion }) {
     setMensaje('')
     let falloOperacion = null
     try {
-      const item = await api(`items/${itemId}/${accion}`, autorizacion, { method: 'POST' })
-      setMensaje(`Ítem ${item.id}: ${item.estado}.`)
+      await api(`items/${itemId}/${accion}`, autorizacion, { method: 'POST' })
+      setMensaje(accion === 'iniciar' ? 'Preparación iniciada.' : 'Plato marcado como listo.')
     } catch (fallo) {
       falloOperacion = fallo
     } finally {
@@ -84,7 +70,7 @@ function Cocina({ autorizacion }) {
       <p>Creado: {new Date(pedido.fecha_hora_creacion).toLocaleString()}</p>
       {pedido.observaciones && <p>Observaciones: {pedido.observaciones}</p>}
       <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
-        <span>Unidad {item.id}: {item.plato} — {item.estado}</span>
+        <span>{item.plato} — {item.estado}</span>
         {item.estado === 'EN_COLA' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'iniciar')}>Iniciar</button>}
         {item.estado === 'EN_PREPARACION' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'listo')}>Marcar listo</button>}
       </li>)}</ul>
@@ -108,6 +94,7 @@ function App() {
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const [revisionCuenta, setRevisionCuenta] = useState(0)
   const pedidosGuard = useRef(null)
   if (pedidosGuard.current === null) pedidosGuard.current = createLatestRequestGuard()
 
@@ -229,6 +216,7 @@ function App() {
       })
       setBorrador({})
       setObservaciones('')
+      setRevisionCuenta((actual) => actual + 1)
       setMensaje(`Pedido enviado a cocina: ${pedido.items.length} unidad(es) en cola. ID global ${pedido.id}.`)
       const pedidosActualizados = await cargarPedidos(sesionObjetivo)
       const numeroLocal = pedidosActualizados?.find((actual) => actual.id === pedido.id)?.numero_en_sesion
@@ -257,7 +245,7 @@ function App() {
 
   async function cancelarItem(itemId, sesionDeLaLista) {
     if (pedidosGuard.current.current() !== sesionDeLaLista ||
-        !pedidosMesa.some((pedido) => pedido.items.some((item) => item.id === itemId && item.estado === 'EN_COLA'))) {
+        !pedidosMesa.some((pedido) => pedido.items.some((item) => item.id === itemId && item.estado === 'EN_COLA' && !item.pagado))) {
       return
     }
     pedidosGuard.current.invalidate()
@@ -267,7 +255,8 @@ function App() {
     let falloOperacion = null
     try {
       await api(`items/${itemId}/cancelar`, autorizacion, { method: 'POST' })
-      setMensaje(`Unidad ${itemId} cancelada; ingredientes devueltos.`)
+      setMensaje('Plato cancelado; ingredientes devueltos.')
+      if (pedidosGuard.current.current() === sesionDeLaLista) setRevisionCuenta((actual) => actual + 1)
     } catch (fallo) {
       falloOperacion = fallo
     } finally {
@@ -281,6 +270,21 @@ function App() {
         if (falloOperacion) setError(falloOperacion.message)
       }
       setOcupado(false)
+    }
+  }
+
+  async function sesionCerrada(sesionCerradaId) {
+    if (pedidosGuard.current.current() !== sesionCerradaId) return
+    pedidosGuard.current.select(null)
+    setSesionId(null)
+    setPedidosMesa([])
+    setBorrador({})
+    setObservaciones('')
+    setMensaje(`Sesión ${sesionCerradaId} cerrada. La mesa puede iniciar una nueva atención.`)
+    try {
+      setMesas(await api('mesas', autorizacion))
+    } catch (fallo) {
+      setError(`La sesión se cerró, pero no se pudo actualizar la lista de mesas: ${fallo.message}`)
     }
   }
 
@@ -343,11 +347,12 @@ function App() {
                 <div className="cabecera pedido-cabecera"><h3>Pedido {pedido.numero_en_sesion}</h3><small>ID global {pedido.id}</small></div>
                 <p>Estado general: <strong>{etiquetasPedido[pedido.estado_general] || 'Sin ítems'}</strong></p>
                 <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
-                  <span>Unidad {item.id}: {item.plato} — {item.estado}</span>
-                  {item.estado === 'EN_COLA' && <button type="button" disabled={ocupado} onClick={() => cancelarItem(item.id, sesionId)}>Cancelar unidad</button>}
+                  <span>{item.plato} — {item.estado}</span>
+                  {item.estado === 'EN_COLA' && !item.pagado && <button type="button" disabled={ocupado} onClick={() => cancelarItem(item.id, sesionId)}>Cancelar</button>}
                 </li>)}</ul>
               </article>)}
             </section>
+            <Cuenta key={sesionId} sesionId={sesionId} autorizacion={autorizacion} revision={revisionCuenta} alCerrar={sesionCerrada} />
           </>}
           </>}
         </>
