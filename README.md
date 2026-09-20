@@ -1,6 +1,6 @@
 # Sala Fogón
 
-Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene Django REST Framework, React/Vite, PostgreSQL y el modelo relacional. El mesero puede abrir sesiones, consultar el catálogo, enviar pedidos, cancelar unidades en cola, registrar pagos parciales por unidad y cerrar sesiones pagadas; el cocinero puede consultar la cola y avanzar cada unidad hasta `LISTO`.
+Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene Django REST Framework, React/Vite y PostgreSQL. ADMIN gestiona empleados, mesas y catálogo; el mesero abre sesiones, envía pedidos, cancela unidades en cola, registra pagos parciales y cierra sesiones pagadas; cocina avanza cada unidad hasta `LISTO`. Las vistas se actualizan automáticamente y el mesero conectado recibe avisos de los platos listos de sus sesiones abiertas.
 
 ## Requisitos
 
@@ -75,14 +75,14 @@ cd frontend
 npm run build
 ```
 
-Para comprobar la protección que descarta respuestas antiguas, el cálculo de importes y las etiquetas legibles de estados en React, ejecuta `npm test` dentro de `frontend/`. Utiliza el runner incluido en Node.js; no instala dependencias adicionales.
+Para comprobar la protección que descarta respuestas antiguas, la sincronización periódica, la detección de ítems listos, el cálculo de importes y las etiquetas legibles de estados en React, ejecuta `npm test` dentro de `frontend/`. Utiliza el runner incluido en Node.js; no instala dependencias adicionales.
 
 ## Organización
 
 - `backend/config/`: configuración Django y comprobación de salud de la API.
 - `backend/restaurant/`: modelos relacionales, validadores de entrada, servicios transaccionales, vistas, administración de datos y pruebas.
-- `frontend/src/`: interfaz React.
-- `ADR/`, `AGENTS.md` y `ASSUMPTIONS.md`: decisiones y modelo conceptual.
+- `frontend/src/`: interfaz React, consultas periódicas y avisos visuales.
+- `ADR/`, `AGENTS.md`, `ASSUMPTIONS.md` y `BITACORA-IA.md`: arquitectura, supuestos, criterios y trazabilidad del desarrollo.
 
 ## Modelo de datos
 
@@ -122,7 +122,7 @@ En React, entra con la cuenta ADMIN para crear empleados con rol `MESERO` o `COC
 
 En React, ADMIN puede crear mesas, crear ingredientes, activar o desactivar ingredientes, ajustar sus existencias y crear o editar platos con sus recetas. Las cantidades de ingredientes son porciones abstractas con tres decimales; cada cantidad de receta corresponde a **una unidad** del plato. El ajuste de existencias establece una **nueva cantidad total**: envía también la cantidad vista antes del ajuste. Si un pedido la cambió entretanto, la API devuelve HTTP 409 y el administrador debe revisar el valor actualizado antes de reintentar.
 
-La disponibilidad se calcula desde `Plato.activo`, los ingredientes activos de la receta y las existencias requeridas. Desactivar un ingrediente no desactiva el plato ni modifica pedidos anteriores. La edición de una receta reemplaza solo su composición actual; los ítems ya enviados conservan su precio y composición históricos. El mesero puede pulsar **Actualizar catálogo** para ver los cambios sin salir de la sesión; al enviar, el backend vuelve a validar el pedido completo.
+La disponibilidad se calcula desde `Plato.activo`, los ingredientes activos de la receta y las existencias requeridas. Desactivar un ingrediente no desactiva el plato ni modifica pedidos anteriores. La edición de una receta reemplaza solo su composición actual; los ítems ya enviados conservan su precio y composición históricos. El catálogo del mesero se actualiza automáticamente; al enviar, el backend vuelve a validar el pedido completo.
 
 | Método y ruta | Función para `ADMIN` |
 | --- | --- |
@@ -153,14 +153,15 @@ Los endpoints de este flujo son:
 | `POST /api/sesiones/` | Abrir sesión y cuenta con `{"mesa_id": 1}`. El mesero se toma de la autenticación. |
 | `GET /api/platos/` | Listar platos y disponibilidad calculada desde estado, receta y existencias. |
 | `POST /api/pedidos/` | Enviar `{"sesion_id": 1, "observaciones": "", "items": [{"plato_id": 1, "cantidad": 2}]}`. Cada unidad crea un `ItemPedido` en `EN_COLA`. |
+| `GET /api/mis-pedidos-activos/` | Consultar, en una sola respuesta, los pedidos de todas las sesiones abiertas del mesero autenticado. Incluye mesa, número de pedido dentro de la sesión e ítems; alimenta la sincronización y los avisos. |
 
 Las rutas anteriores, salvo `/api/me/`, requieren HTTP Basic y el rol `MESERO`. Las cantidades de `items` deben ser números enteros JSON mayores que cero y el arreglo no puede estar vacío. Los pedidos solo pueden enviarse a una sesión activa del mesero autenticado.
 
 ## Cocina y cancelaciones
 
-El ADMIN puede crear la cuenta de COCINERO desde React. Entra con las credenciales del cocinero. La cola muestra los pedidos pendientes de más antiguos a más recientes, agrupados por pedido y con su mesa, observaciones e ítems en `EN_COLA` o `EN_PREPARACION`. Pulsa **Iniciar** en una unidad en cola y después **Marcar listo**. La vista se actualiza tras cada operación; **Actualizar** consulta también cambios hechos desde otra pestaña. No hay actualización en tiempo real ni WebSockets.
+El ADMIN puede crear la cuenta de COCINERO desde React. Entra con las credenciales del cocinero. La cola muestra los pedidos pendientes de más antiguos a más recientes, agrupados por pedido y con su mesa, observaciones e ítems en `EN_COLA` o `EN_PREPARACION`. Pulsa **Iniciar** en una unidad en cola y después **Marcar listo**. La vista se actualiza tras cada operación y consulta automáticamente cambios hechos desde otra pestaña. No se usan WebSockets.
 
-El mesero ve todos los pedidos de la sesión seleccionada, incluidos los completados y cancelados. Se muestran como **Pedido 1**, **Pedido 2**, etc., según fecha de creación e ID dentro de esa sesión; el ID global permanece pequeño a la derecha para identificar el registro real. Puede pulsar **Actualizar** y cancelar una unidad que aún aparezca en `EN_COLA` y no esté asignada a un pago. Al cambiar de mesa se vacía la lista anterior y se ignoran las respuestas de consultas antiguas. El backend vuelve a comprobar el estado y la asignación de pago: si cocina la inició entretanto o el ítem ya fue pagado, rechaza la cancelación con HTTP 409. Una cancelación aceptada conserva el ítem en `CANCELADO` y devuelve las cantidades registradas en su composición histórica, incluso si la receta actual del plato ha cambiado. Una segunda cancelación devuelve HTTP 409 y no repite la devolución.
+El mesero ve todos los pedidos de la sesión seleccionada, incluidos los completados y cancelados. Se muestran como **Pedido 1**, **Pedido 2**, etc., según fecha de creación e ID dentro de esa sesión; el ID global permanece pequeño a la derecha para identificar el registro real. Puede cancelar una unidad que aún aparezca en `EN_COLA` y no esté asignada a un pago. Al cambiar de mesa se vacía la lista anterior y se ignoran las respuestas de consultas antiguas. El backend vuelve a comprobar el estado y la asignación de pago: si cocina la inició entretanto o el ítem ya fue pagado, rechaza la cancelación con HTTP 409. Una cancelación aceptada conserva el ítem en `CANCELADO` y devuelve las cantidades registradas en su composición histórica, incluso si la receta actual del plato ha cambiado. Una segunda cancelación devuelve HTTP 409 y no repite la devolución.
 
 El estado general se **calcula al consultar**, sin columna adicional en `Pedido`: `CANCELADO` si todos los ítems están cancelados, `COMPLETO` si todos los no cancelados están listos, `EN_COLA` si todos los no cancelados siguen en cola y `EN_CURSO` para los demás avances parciales. Mesero y cocina muestran ese resumen junto con los estados individuales. Cocina conserva el ID global y solo muestra pedidos con ítems `EN_COLA` o `EN_PREPARACION`; por eso un pedido completamente listo o cancelado desaparece de su cola, pero sigue visible en la lista de su sesión para el mesero.
 
@@ -191,3 +192,13 @@ Los importes de la API se calculan a partir de `ItemPedido.precio_unitario`; ni 
 Las pruebas funcionales y de concurrencia usan exclusivamente `test_sala_fogon` con conexiones PostgreSQL independientes. Verifican la asignación única de ítems, que una cancelación en cola prevalece sobre un pago aún no habilitado, el cierre frente a un pedido nuevo y dos cierres simultáneos. La estudiante probó manualmente en el navegador el flujo de cuenta, pagos parciales y cierre. React muestra cada plato pedido en su propia fila sin exponer el ID de su ítem; esos identificadores siguen utilizándose internamente para operar cada registro individual. La compilación y las pruebas JavaScript terminaron correctamente; aún no hay una prueba automatizada de navegador. Las reglas de pago están registradas en `ASSUMPTIONS.md` y `BITACORA-IA.md`.
 
 La prueba `restaurant` usa explícitamente `test_sala_fogon` y reutiliza esa base con `--keepdb`; no escribe datos de prueba en `sala_fogon`. Dos pruebas de carrera lanzan cancelación frente a inicio de preparación y dos cancelaciones a la vez, respectivamente. Verifican procesos PostgreSQL distintos, una sola operación aceptada y existencias finales correctas; no miden cuánto tiempo espera una solicitud en el bloqueo. Aún quedan pendientes pruebas automatizadas de navegador, de dos aperturas simultáneas y de dos envíos de pedidos simultáneos.
+
+## Sincronización automática de las vistas
+
+React consulta en segundo plano la cola de cocina, la cuenta de la mesa seleccionada y **todos los pedidos de las sesiones abiertas del mesero autenticado** aproximadamente cada **3 segundos**. Una sola lectura de estos últimos actualiza los pedidos visibles y detecta novedades de cocina, incluso cuando el mesero está mirando otra mesa. El catálogo y las mesas del mesero, la configuración del restaurante y la lista de empleados se consultan aproximadamente cada **30 segundos** mientras sus vistas están abiertas. Una operación realizada en la propia pantalla sigue actualizando inmediatamente sus datos relacionados, sin esperar al siguiente intervalo. Las vistas no requieren botones de actualización manual; ante una falla temporal conservan los datos y reintentan automáticamente.
+
+El mecanismo utiliza HTTP Basic y los permisos existentes; solo se añadió la consulta agrupada de pedidos propios. No hay servidor de eventos, WebSockets, caché persistente ni dependencias nuevas. Las consultas GET evitan la caché del navegador. Cada recurso evita lecturas periódicas superpuestas y descarta respuestas anteriores cuando hay una solicitud más reciente o se cambia de sesión. Las consultas se detienen al desmontar su vista o mientras la pestaña está oculta o sin conexión, y se reanudan al volver a verla, enfocar la ventana o recuperar la conexión. Ante una falla temporal se conservan los datos mostrados, aparece un aviso discreto y se reintenta sin abrir repetidamente el modal de errores. Los formularios y el pedido temporal permanecen en React durante esos refrescos. La elección técnica y sus compromisos constan en [ADR-004](ADR/004-sincronizacion-y-avisos.md).
+
+Cuando una lectura observa que un ítem conocido cambió a `LISTO`, el mesero responsable ve un aviso en el lado derecho con el plato, la mesa y el número de pedido de esa sesión. Varios ítems detectados juntos se agrupan en un aviso; no se repite en consultas posteriores. Se reutilizan el cierre y la duración de seis segundos del aviso existente. La primera lectura tras iniciar sesión o recargar establece una referencia: no anuncia platos que ya estaban listos. El aviso es temporal y no es una notificación push ni un historial; si un ítem aparece por primera vez ya listo, no se puede demostrar su transición a partir de estas lecturas y no se anuncia retrospectivamente.
+
+La estudiante comprobó manualmente con sesiones independientes que los cambios se reflejan sin recargar, el mesero correspondiente recibe el aviso de `LISTO`, otros meseros no lo reciben, no hay avisos repetidos y la sincronización no interfiere con formularios ni operaciones. Para repetir esa revisión, abre sesiones independientes de MESERO y COCINERO; envía un pedido, avanza una unidad hasta `LISTO` y observa el estado y el aviso en la sesión del mesero. Puedes seleccionar otra mesa y verificar el aviso de la mesa original. Las pruebas JavaScript y Django son independientes de esta comprobación manual. Aún no se ha ejecutado una prueba automatizada de interfaz en navegador ni una instalación desde cero en otro equipo.

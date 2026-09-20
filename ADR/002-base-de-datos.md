@@ -53,3 +53,23 @@ las validaciones que dependen de varias tablas, y las pruebas de
 concurrencia correspondientes. La base de pruebas fue creada aparte
 porque el rol de la aplicación no tiene `CREATEDB`; las credenciales
 locales se mantienen fuera del repositorio.
+
+## Estado posterior de la implementación
+
+El apartado anterior registra la verificación estructural inicial.
+Posteriormente se implementaron la reserva y devolución transaccional
+de ingredientes, las transiciones de cocina, los pagos parciales y el
+cierre. Las escrituras que afectan a una sesión bloquean primero su
+fila; los servicios bloquean después los ítems e ingredientes que
+correspondan. Se conserva la restricción única de sesión activa por
+mesa y la asignación única de pago por ítem. La migración `0002` retiró
+el puntaje de carga de `Plato` por decisión posterior de alcance, sin
+reescribir la migración inicial.
+
+Las pruebas de concurrencia posteriores usan conexiones PostgreSQL
+independientes para cancelaciones, preparación, pagos y cierre, y
+comprueban el estado final de los registros. No equivalen a una prueba
+exhaustiva de todas las intercalaciones posibles; siguen pendientes
+pruebas específicas de dos aperturas de mesa y dos envíos de pedido
+simultáneos. Los importes y estados derivados no se almacenan como
+columnas adicionales.

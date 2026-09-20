@@ -43,3 +43,19 @@ pendientes. Se verificó que Vite sirve la página, que su proxy local
 alcanza `/api/health/` mediante HTTP y que React compila. No se hizo una
 prueba automatizada en navegador. La instalación desde cero en otra
 máquina continúa pendiente de verificar.
+
+## Estado posterior de la implementación
+
+El apartado anterior describe el primer incremento de la sesión 3. En
+los incrementos siguientes se implementaron los flujos de mesero,
+cocina, cancelaciones, pagos, cierre y configuración del restaurante.
+`restaurant/` separa modelos, validadores, vistas y servicios; React
+conserva vistas por rol en `frontend/src/`. La API operativa aplica HTTP
+Basic y comprueba `Usuario.rol` y la actividad de `auth.User` en el
+backend. La cuenta ADMIN inicial se crea con un comando local y después
+puede gestionar empleados MESERO y COCINERO desde React. No se añadió
+autenticación avanzada ni otro servicio de negocio.
+
+La sincronización automática y los avisos derivados de ella se
+documentan en [ADR-004](004-sincronizacion-y-avisos.md). Sigue pendiente
+verificar una instalación desde cero en otra máquina.

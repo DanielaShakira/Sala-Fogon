@@ -533,3 +533,160 @@ cambios de modelo sin migración y la compilación React. La migración
 migraciones pendientes. La nueva presentación aún no se ha comprobado
 manualmente en el navegador; no se realizaron commits ni publicaciones
 en esta intervención.
+
+### Mejora posterior: sincronización automática de datos
+
+La estudiante detectó que, aun funcionando los flujos, otros usuarios
+debían pulsar **Actualizar** o recargar la página para ver pedidos,
+estados y cambios de catálogo. Solicitó sincronización entre sesiones y
+dispositivos, con intervalos orientativos de 3 segundos para pedidos y
+30 segundos para datos menos dinámicos, sin perder borradores ni
+formularios y sin incorporar infraestructura innecesaria.
+
+Codex comparó polling, Server-Sent Events y WebSockets a partir del
+monolito Django REST Framework y sus endpoints GET existentes. Propuso
+**polling por vista** porque satisface la necesidad operativa con la API
+y permisos actuales; SSE y WebSockets requerirían conexiones
+persistentes y un mecanismo adicional para emitir eventos. La
+implementación consulta cocina, pedidos y cuenta activa cada 3 segundos,
+y catálogo, mesas, configuración y empleados cada 30 segundos. Las
+operaciones locales fuerzan una consulta inmediata. No se añadieron
+dependencias, entidades, campos, migraciones ni cambios de reglas de
+negocio.
+
+El temporizador evita consultas periódicas superpuestas, se limpia al
+desmontar la vista y pausa las solicitudes si la pestaña está oculta o
+sin conexión. Reanuda al recuperar visibilidad, foco o conexión. Las
+consultas GET evitan la caché del navegador. Las lecturas simultáneas
+de un mismo recurso comparten una solicitud; tras
+una escritura se fuerza otra y los guardas existentes descartan
+respuestas antiguas. Los fallos temporales de las consultas de fondo
+conservan los datos cargados y muestran un aviso discreto, sin repetir
+modales. Se ajustó el formulario de existencias de ADMIN para que una
+actualización remota no sustituya una cantidad que se esté escribiendo.
+La cuenta ya no se vacía ni pierde su selección válida al recibir una
+revisión de pedidos.
+
+La verificación ejecutó **78 pruebas Django** en `test_sala_fogon`
+con `--keepdb`, **15 pruebas JavaScript**, `manage.py check`,
+`makemigrations --check --dry-run`, `migrate --check --noinput` y
+`npm run build`; todas terminaron correctamente. Las pruebas
+JavaScript incluyen dos controladores independientes leyendo un estado
+compartido, cambios de pedido, ausencia de consultas superpuestas,
+pausa y reanudación, reconexión, reintento tras fallos y lecturas
+forzadas después de una escritura. Esto verifica el mecanismo en forma
+automatizada, pero **no equivale a una prueba con dos navegadores
+reales**. La herramienta de navegador no estaba disponible en esta
+intervención; la comprobación manual entre perfiles y dispositivos
+queda pendiente para la revisión de la estudiante. Tampoco se midieron
+latencias ni carga con múltiples dispositivos. No se hicieron commits
+ni publicaciones.
+
+### Cierre de la etapa: aviso de platos listos y revisión integral
+
+La estudiante aprobó la apariencia alcanzada por el frontend y pidió
+conservarla. En los incrementos visuales previos solicitó expresamente
+`$frontend-design`; el historial contiene el commit
+`1e6921c` de mejora parcial de interfaz y consistencia, y el árbol de
+trabajo conserva ajustes visuales y el aviso global de operaciones.
+Codex adaptó las vistas existentes y posteriormente hizo visibles los
+errores de operaciones mediante el componente `AvisoGlobal`. El archivo
+local `backend/.agents/skills/frontend-design/SKILL.md` disponible en
+esta revisión tiene tamaño cero; no hay instrucciones de esa skill que
+puedan verificarse ni se le atribuyen reglas de diseño concretas.
+La estudiante confirmó que el resultado visual le parecía bien y pidió
+que no se hicieran nuevos rediseños.
+
+Para el cierre, la estudiante pidió una notificación lateral cuando
+cocina dejara listo un ítem, incluso si el mesero estaba consultando
+otra mesa, además de pruebas y cierre documental. Codex comprobó en el
+modelo `ItemPedido.estado = LISTO` y la relación
+`ItemPedido → Pedido → Sesion → Usuario(MESERO)`. Propuso extender la
+consulta operativa de pedidos del mesero a **todas sus sesiones
+abiertas**, filtradas por la autenticación del backend, para usar el
+mismo ciclo de polling de tres segundos en vez de añadir otro. Se creó
+`GET /api/mis-pedidos-activos/`; la lectura actualiza la lista de la
+mesa seleccionada y detecta transiciones observadas hacia `LISTO`.
+
+La primera lectura después del ingreso o recarga solo establece la
+referencia; no anuncia platos antiguos. La misma transición no vuelve
+a anunciarse en lecturas posteriores. Si varios ítems cambian juntos,
+se agrupan en un solo aviso con nombres de platos, mesa y número local
+de pedido. Se reutilizaron el componente lateral `AvisoGlobal`, su
+cierre y su duración de seis segundos. Los errores siguen apareciendo
+en el modal existente. No se añadieron estados, relaciones,
+notificaciones push ni registros persistentes de eventos. El aviso
+depende de observar dos estados sucesivos: no puede reconstruir un
+cambio si el ítem aparece por primera vez ya listo.
+
+Codex revisó los ADR, la documentación, el historial y el código.
+Conservó las decisiones históricas de ADR-001 a ADR-003 y añadió a los
+dos primeros una nota de estado posterior para que sus pendientes
+iniciales no se confundan con el estado vigente. Documentó en ADR-004
+la elección arquitectónica de polling frente a actualización manual,
+Server-Sent Events y WebSockets, sin afirmar que esas alternativas se
+hayan prototipado o medido. La separación de roles, la autenticación
+Basic y los bloqueos PostgreSQL desarrollan ADR-001 y ADR-002; los
+ajustes visuales y el formato de avisos no justifican ADR adicionales.
+Se actualizaron README, AGENTS y ASSUMPTIONS para distinguir alcance
+implementado, supuestos vigentes y límites de verificación. La decisión
+de los avisos efímeros queda registrada en A-024.
+
+**Verificación final:** la suite completa terminó con **81 pruebas
+Django** aprobadas en `test_sala_fogon` usando `--keepdb` y **19 pruebas
+JavaScript** aprobadas. Entre las nuevas pruebas se comprobó que la
+lectura agregada incluye solo las sesiones abiertas del mesero
+autenticado, respeta los roles, muestra una transición efectuada por
+cocina y no expone pedidos de otro mesero. Las pruebas JavaScript
+comprueban que una transición observada genera un único aviso, que
+no se anuncian estados antiguos y que varios ítems se agrupan. Pasaron
+`manage.py check`, la comprobación de ausencia de cambios de modelo sin
+migración, `migrate --check --noinput`, `npm run build` y `git diff
+--check`. Estas pruebas no sustituyen una comprobación de interfaz con
+dos navegadores reales: el navegador no estuvo disponible en esta
+intervención. Siguen pendientes esa prueba manual entre perfiles,
+una prueba automatizada de navegador, una instalación desde cero en
+otra máquina y los casos específicos de aperturas/envíos simultáneos
+señalados anteriormente. No se hicieron commits ni push en este cierre.
+
+### Último ajuste y cierre de la etapa
+
+Después del cierre técnico anterior, la estudiante realizó
+personalmente las pruebas manuales con sesiones independientes.
+Confirmó que los cambios se sincronizan automáticamente, que los
+avisos de `LISTO` llegan al mesero correspondiente y no a otros, que
+no se repiten innecesariamente y que los formularios y operaciones
+siguen funcionando. Estos resultados son **pruebas manuales de la
+estudiante**, distintas de las pruebas automatizadas ejecutadas por
+Codex. La revisión manual ocurrió antes del último ajuste de botones;
+no se afirma haber repetido desde Codex una inspección visual posterior
+en navegador.
+
+La estudiante consideró aprobado el diseño y pidió retirar únicamente
+los controles de actualización que se volvieron redundantes con el
+polling. Codex eliminó **Actualizar cola**, **Actualizar catálogo**,
+**Actualizar pedidos**, **Actualizar cuenta** y los controles
+**Actualizar** de configuración y empleados. Retiró las dos funciones
+de clic que quedaron sin uso y una regla CSS destinada a esos botones.
+Conservó los botones de negocio, las lecturas inmediatas tras cada
+operación y el reintento automático de consultas de fondo. No cambió
+el mecanismo de sincronización, las reglas del backend ni el diseño
+general.
+
+Tras ese ajuste, Codex ejecutó **19 pruebas JavaScript** y la
+compilación React: ambas verificaciones pasaron. Ejecutó las **81
+pruebas Django** exclusivamente en `test_sala_fogon` con `--keepdb`:
+todas pasaron. `manage.py check` no reportó problemas,
+`makemigrations --check --dry-run` no detectó cambios y
+`migrate --check --noinput` terminó correctamente. El README, AGENTS
+y ADR-004 se actualizaron para reflejar los controles finales y la
+verificación manual ya realizada. Se revisaron ASSUMPTIONS y los demás
+ADR: sus decisiones vigentes no requirieron cambios adicionales.
+
+No se ejecutaron una instalación desde cero en otro equipo ni pruebas
+automatizadas de interfaz en navegador; permanecen como verificaciones
+no realizadas. Las pruebas específicas de dos aperturas de mesa y dos
+envíos de pedido simultáneos indicadas anteriormente tampoco se
+añadieron. No se detectaron fallos conocidos que impidan cerrar esta
+etapa de desarrollo. La estudiante revisará los cambios antes de
+registrarlos en Git; Codex no realizó commit ni push.

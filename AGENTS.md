@@ -332,6 +332,8 @@ item_pedido_id
     cantidades comprometidas deben devolverse a la disponibilidad.
 -   Una modificación de un pedido que agregue o retire unidades debe
     volver a validar y ajustar las cantidades de ingredientes.
+    La edición general de pedidos ya enviados no está implementada;
+    actualmente se envían pedidos nuevos o se cancelan unidades en cola.
 -   Un plato no disponible no puede solicitarse y debe dejar de
     ofrecerse.
 -   Una mesa no puede tener dos sesiones activas simultáneamente.
@@ -477,3 +479,33 @@ inicial de carga de preparación queda como antecedente histórico en
 `ASSUMPTIONS.md` y `BITACORA-IA.md`, sustituida por A-023. El modelo
 actual no asigna cocineros ni calcula puntajes de preparación. Las
 transiciones independientes y el orden de la cola de cocina no cambian.
+
+## Estado operativo posterior de Sistema E
+
+ADMIN gestiona desde React empleados MESERO y COCINERO, mesas,
+ingredientes, existencias, platos y recetas. Los meseros operan sus
+sesiones, pedidos, cancelaciones, cuentas, pagos y cierres; los
+cocineros consultan la cola y avanzan cada ítem. La API conserva la
+autoridad sobre roles, disponibilidad y transiciones. No se añadió una
+entidad de notificación ni campos derivados de estado o importe.
+
+Las vistas consultan automáticamente pedidos y cuenta cada 3 segundos
+aproximadamente, y datos menos dinámicos cada 30 segundos. La consulta
+de pedidos de un mesero reúne sus sesiones abiertas y permite mostrar
+un aviso visual cuando se observa el paso de un ítem a `LISTO`, aun si
+está consultando otra mesa. Los avisos son temporales y no se reproducen
+al iniciar sesión. El mecanismo, sus alternativas y límites están en
+[ADR-004](ADR/004-sincronizacion-y-avisos.md); el uso y las verificaciones
+de IA constan en `BITACORA-IA.md`.
+
+La estudiante comprobó manualmente la sincronización y los avisos entre
+sesiones independientes, así como la conservación de los formularios.
+Se retiraron los controles de actualización manual redundantes; los
+refrescos posteriores a cada operación y el reintento automático se
+conservan. La instalación desde cero en otra máquina y una prueba
+automatizada de interfaz en navegador no se han acreditado. Las pruebas
+de backend
+utilizan exclusivamente `test_sala_fogon`; no deben utilizar la base
+principal para ejecutar pruebas. Las credenciales locales están fuera
+de Git. Los resultados de la suite final deben leerse en la bitácora,
+sin interpretar las cifras de los hitos anteriores como el total actual.

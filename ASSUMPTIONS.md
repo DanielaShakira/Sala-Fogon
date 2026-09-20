@@ -180,6 +180,11 @@ Los roles considerados serán:
 
 El usuario `ADMIN` podrá gestionar la configuración de platos e ingredientes; el `MESERO` gestionará las sesiones y pedidos; el `COCINERO` gestionará el avance de preparación de los ítems.
 
+**Alcance operativo confirmado posteriormente:** ADMIN también crea y
+activa o desactiva cuentas de empleados MESERO y COCINERO, y configura
+mesas desde React. No puede crear nuevos ADMIN desde esa interfaz. El
+mesero conserva la responsabilidad de sus sesiones abiertas.
+
 No se implementará un sistema avanzado de autenticación.
 
 **Motivo:** es necesario distinguir las responsabilidades de los actores principales del restaurante, pero la autenticación avanzada se encuentra fuera del alcance de la prueba.
@@ -249,6 +254,12 @@ Al enviar el pedido a cocina, el sistema:
 4. coloca los ítems en `EN_COLA`.
 
 Si un pedido en cola se modifica para agregar o retirar unidades, se aplicarán nuevamente las validaciones y ajustes correspondientes.
+
+**Alcance implementado:** el sistema envía pedidos nuevos y permite
+cancelar unidades aún `EN_COLA`; no ofrece una operación general para
+editar un pedido ya enviado y agregarle unidades. La frase anterior
+conserva la regla prevista para una eventual ampliación, no describe
+una función disponible.
 
 **Precisiones confirmadas en la sesión 3:** no se aceptarán pedidos vacíos
 ni cantidades negativas. El envío se tratará como una sola operación: si
@@ -326,3 +337,18 @@ pedidos ni se introduce una configuración de rangos de carga.
 **Motivo:** concentrar el alcance en pedidos, disponibilidad, cocina y
 cuentas, evitando una métrica cuya interpretación requeriría reglas
 adicionales del restaurante.
+
+---
+
+## A-024 — Los avisos de cocina son temporales para el mesero conectado
+
+Cuando la aplicación abierta observe que un ítem de una sesión activa
+pasó a `LISTO`, el mesero responsable recibirá un aviso visual.
+El aviso no requiere seleccionar esa mesa, pero no se conservará como
+historial ni se enviará mediante notificaciones push. Al ingresar o
+recargar, los ítems que ya estén listos no generarán avisos antiguos.
+
+**Motivo:** comunicar novedades operativas sin ampliar el modelo de
+datos a un sistema de mensajería o notificaciones durables. La consulta
+periódica y su límite de observación se explican en
+[ADR-004](ADR/004-sincronizacion-y-avisos.md).
