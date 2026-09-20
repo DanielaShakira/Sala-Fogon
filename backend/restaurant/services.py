@@ -111,3 +111,43 @@ def enviar_pedido(datos, mesero):
             ingrediente.save(update_fields=["cantidad_disponible"])
 
         return pedido
+
+
+def avanzar_item(item_id, estado_esperado, estado_nuevo):
+    """Lock the unit so competing preparation/cancellation requests serialize."""
+    with transaction.atomic():
+        item = ItemPedido.objects.select_for_update().filter(pk=item_id).first()
+        if item is None:
+            raise NotFound("El ítem no existe.")
+        if item.estado != estado_esperado:
+            raise Conflicto("El ítem ya no está en el estado requerido.")
+        item.estado = estado_nuevo
+        item.save(update_fields=["estado"])
+        return item
+
+
+def cancelar_item(item_id, mesero):
+    """Return the historical composition exactly once, in one transaction."""
+    with transaction.atomic():
+        item = ItemPedido.objects.select_for_update().filter(pk=item_id).first()
+        if item is None:
+            raise NotFound("El ítem no existe.")
+        if item.pedido.sesion.mesero_id != mesero.id:
+            raise PermissionDenied("El ítem pertenece a la sesión de otro mesero.")
+        if item.estado != ItemPedido.Estado.EN_COLA:
+            raise Conflicto("Solo se puede cancelar un ítem en cola.")
+
+        cantidades = {
+            fila.ingrediente_id: fila.cantidad
+            for fila in ComposicionItemPedido.objects.filter(item_pedido=item)
+        }
+        ingredientes = Ingrediente.objects.select_for_update().filter(
+            pk__in=cantidades
+        ).order_by("pk")
+        for ingrediente in ingredientes:
+            ingrediente.cantidad_disponible += cantidades[ingrediente.id]
+            ingrediente.save(update_fields=["cantidad_disponible"])
+
+        item.estado = ItemPedido.Estado.CANCELADO
+        item.save(update_fields=["estado"])
+        return item

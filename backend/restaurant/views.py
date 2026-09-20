@@ -2,34 +2,50 @@
 
 from django.db.models import Prefetch
 from rest_framework.authentication import BasicAuthentication
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Mesa, Plato, Sesion, Usuario
+from .models import ItemPedido, Mesa, Pedido, Plato, Sesion, Usuario
 from .serializers import AperturaSesionSerializer, EnvioPedidoSerializer
-from .services import abrir_sesion, enviar_pedido
+from .services import abrir_sesion, avanzar_item, cancelar_item, enviar_pedido
 
 
-def mesero_autenticado(request):
+def perfil_autenticado(request, rol=None):
     try:
         perfil = request.user.usuario_restaurante
     except Usuario.DoesNotExist as exc:
         raise PermissionDenied("La cuenta no tiene un perfil del restaurante.") from exc
-    if not perfil.activo or perfil.rol != Usuario.Rol.MESERO:
-        raise PermissionDenied("Esta operación requiere un mesero activo.")
+    if not perfil.activo or (rol is not None and perfil.rol != rol):
+        raise PermissionDenied("La cuenta no tiene el rol activo requerido.")
     return perfil
 
 
-class VistaMesero(APIView):
+def mesero_autenticado(request):
+    return perfil_autenticado(request, Usuario.Rol.MESERO)
+
+
+def cocinero_autenticado(request):
+    return perfil_autenticado(request, Usuario.Rol.COCINERO)
+
+
+class VistaAutenticada(APIView):
     authentication_classes = [BasicAuthentication]
     permission_classes = [IsAuthenticated]
 
 
-class MiPerfilView(VistaMesero):
+class VistaMesero(VistaAutenticada):
+    pass
+
+
+class VistaCocina(VistaAutenticada):
+    pass
+
+
+class MiPerfilView(VistaAutenticada):
     def get(self, request):
-        perfil = mesero_autenticado(request)
+        perfil = perfil_autenticado(request)
         return Response({"id": perfil.id, "nombre": perfil.nombre, "rol": perfil.rol})
 
 
@@ -104,3 +120,93 @@ class PedidosView(VistaMesero):
                 for item in pedido.items.order_by("id")
             ],
         }, status=201)
+
+
+def representar_item(item):
+    return {"id": item.id, "plato": item.plato.nombre, "estado": item.estado}
+
+
+def calcular_estado_general(items):
+    """Derive the order's display state; Pedido has no estado column."""
+    if not items:
+        return None  # The API does not create empty orders.
+    vigentes = [item.estado for item in items if item.estado != ItemPedido.Estado.CANCELADO]
+    if not vigentes:
+        return "CANCELADO"
+    if all(estado == ItemPedido.Estado.LISTO for estado in vigentes):
+        return "COMPLETO"
+    if all(estado == ItemPedido.Estado.EN_COLA for estado in vigentes):
+        return "EN_COLA"
+    return "EN_CURSO"
+
+
+class PedidosSesionView(VistaMesero):
+    def get(self, request, sesion_id):
+        perfil = mesero_autenticado(request)
+        sesion = Sesion.objects.filter(pk=sesion_id).first()
+        if sesion is None:
+            raise NotFound("La sesión no existe.")
+        if sesion.mesero_id != perfil.id:
+            raise PermissionDenied("La sesión pertenece a otro mesero.")
+        pedidos = Pedido.objects.filter(sesion=sesion).prefetch_related(
+            Prefetch("items", queryset=ItemPedido.objects.select_related("plato").order_by("id"))
+        ).order_by("fecha_hora_creacion", "id")
+        resultado = []
+        for numero, pedido in enumerate(pedidos, start=1):
+            items = list(pedido.items.all())
+            resultado.append({
+                "id": pedido.id,
+                "numero_en_sesion": numero,
+                "fecha_hora_creacion": pedido.fecha_hora_creacion,
+                "estado_general": calcular_estado_general(items),
+                "items": [representar_item(item) for item in items],
+            })
+        return Response(resultado)
+
+
+class ColaCocinaView(VistaCocina):
+    def get(self, request):
+        cocinero_autenticado(request)
+        pendientes = (ItemPedido.Estado.EN_COLA, ItemPedido.Estado.EN_PREPARACION)
+        pedidos = Pedido.objects.filter(items__estado__in=pendientes).distinct().select_related(
+            "sesion__mesa"
+        ).prefetch_related(
+            Prefetch(
+                "items",
+                queryset=ItemPedido.objects.select_related("plato").order_by("id"),
+            )
+        ).order_by("fecha_hora_creacion", "id")
+        resultado = []
+        for pedido in pedidos:
+            items = list(pedido.items.all())
+            resultado.append({
+                "id": pedido.id,
+                "sesion_id": pedido.sesion_id,
+                "mesa_numero": pedido.sesion.mesa.numero,
+                "fecha_hora_creacion": pedido.fecha_hora_creacion,
+                "observaciones": pedido.observaciones,
+                "estado_general": calcular_estado_general(items),
+                "items": [representar_item(item) for item in items if item.estado in pendientes],
+            })
+        return Response(resultado)
+
+
+class IniciarItemView(VistaCocina):
+    def post(self, request, item_id):
+        cocinero_autenticado(request)
+        item = avanzar_item(item_id, ItemPedido.Estado.EN_COLA, ItemPedido.Estado.EN_PREPARACION)
+        return Response({"id": item.id, "estado": item.estado})
+
+
+class ListoItemView(VistaCocina):
+    def post(self, request, item_id):
+        cocinero_autenticado(request)
+        item = avanzar_item(item_id, ItemPedido.Estado.EN_PREPARACION, ItemPedido.Estado.LISTO)
+        return Response({"id": item.id, "estado": item.estado})
+
+
+class CancelarItemView(VistaMesero):
+    def post(self, request, item_id):
+        perfil = mesero_autenticado(request)
+        item = cancelar_item(item_id, perfil)
+        return Response({"id": item.id, "estado": item.estado})

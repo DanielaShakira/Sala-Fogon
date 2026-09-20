@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createLatestRequestGuard } from './latestRequest.js'
 import './App.css'
 
 function basicHeader(usuario, clave) {
@@ -22,6 +23,76 @@ async function api(ruta, autorizacion, opciones = {}) {
   return datos
 }
 
+const etiquetasPedido = {
+  EN_COLA: 'En cola',
+  EN_CURSO: 'En curso',
+  COMPLETO: 'Completo',
+  CANCELADO: 'Cancelado',
+}
+
+function Cocina({ autorizacion }) {
+  const [cola, setCola] = useState([])
+  const [ocupado, setOcupado] = useState(false)
+  const [mensaje, setMensaje] = useState('')
+  const [error, setError] = useState('')
+  const colaGuard = useRef(null)
+  if (colaGuard.current === null) colaGuard.current = createLatestRequestGuard()
+
+  async function refrescar() {
+    const sigueVigente = colaGuard.current.begin('cola')
+    try {
+      const datos = await api('cocina/cola', autorizacion)
+      if (sigueVigente()) {
+        setCola(datos)
+        setError('')
+      }
+    } catch (fallo) {
+      if (sigueVigente()) setError(fallo.message)
+    }
+  }
+
+  useEffect(() => {
+    colaGuard.current.select('cola')
+    void refrescar()
+    return () => colaGuard.current.select(null)
+  }, [autorizacion])
+
+  async function avanzar(itemId, accion) {
+    colaGuard.current.invalidate()
+    setOcupado(true)
+    setError('')
+    setMensaje('')
+    let falloOperacion = null
+    try {
+      const item = await api(`items/${itemId}/${accion}`, autorizacion, { method: 'POST' })
+      setMensaje(`Ítem ${item.id}: ${item.estado}.`)
+    } catch (fallo) {
+      falloOperacion = fallo
+    } finally {
+      await refrescar()
+      if (falloOperacion) setError(falloOperacion.message)
+      setOcupado(false)
+    }
+  }
+
+  return <section className="panel">
+    <div className="cabecera"><h2>Cola de cocina</h2><button type="button" disabled={ocupado} onClick={refrescar}>Actualizar</button></div>
+    {cola.length === 0 && <p>No hay ítems pendientes.</p>}
+    {cola.map((pedido) => <article className="pedido" key={pedido.id}>
+      <h3>Pedido {pedido.id} · Mesa {pedido.mesa_numero}</h3>
+      <p>Estado general: <strong>{etiquetasPedido[pedido.estado_general] || 'Sin ítems'}</strong></p>
+      <p>Creado: {new Date(pedido.fecha_hora_creacion).toLocaleString()}</p>
+      {pedido.observaciones && <p>Observaciones: {pedido.observaciones}</p>}
+      <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
+        <span>Unidad {item.id}: {item.plato} — {item.estado}</span>
+        {item.estado === 'EN_COLA' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'iniciar')}>Iniciar</button>}
+        {item.estado === 'EN_PREPARACION' && <button type="button" disabled={ocupado} onClick={() => avanzar(item.id, 'listo')}>Marcar listo</button>}
+      </li>)}</ul>
+    </article>)}
+    <div aria-live="polite">{mensaje && <p className="ok">{mensaje}</p>}{error && <p className="error">{error}</p>}</div>
+  </section>
+}
+
 function App() {
   const [usuario, setUsuario] = useState('')
   const [clave, setClave] = useState('')
@@ -29,6 +100,7 @@ function App() {
   const [perfil, setPerfil] = useState(null)
   const [mesas, setMesas] = useState([])
   const [platos, setPlatos] = useState([])
+  const [pedidosMesa, setPedidosMesa] = useState([])
   const [mesaId, setMesaId] = useState('')
   const [sesionId, setSesionId] = useState(null)
   const [borrador, setBorrador] = useState({})
@@ -36,6 +108,23 @@ function App() {
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const pedidosGuard = useRef(null)
+  if (pedidosGuard.current === null) pedidosGuard.current = createLatestRequestGuard()
+
+  async function cargarPedidos(sesionObjetivo) {
+    const sigueVigente = pedidosGuard.current.begin(sesionObjetivo)
+    try {
+      const datos = await api(`sesiones/${sesionObjetivo}/pedidos`, autorizacion)
+      if (sigueVigente()) {
+        setPedidosMesa(datos)
+        setError('')
+        return datos
+      }
+    } catch (fallo) {
+      if (sigueVigente()) setError(fallo.message)
+    }
+    return null
+  }
 
   async function ingresar(evento) {
     evento.preventDefault()
@@ -44,13 +133,17 @@ function App() {
     try {
       const encabezado = basicHeader(usuario, clave)
       const datosPerfil = await api('me', encabezado)
-      const [datosMesas, datosPlatos] = await Promise.all([
-        api('mesas', encabezado), api('platos', encabezado),
-      ])
+      if (datosPerfil.rol === 'MESERO') {
+        const [datosMesas, datosPlatos] = await Promise.all([
+          api('mesas', encabezado), api('platos', encabezado),
+        ])
+        setMesas(datosMesas)
+        setPlatos(datosPlatos)
+      } else if (datosPerfil.rol !== 'COCINERO') {
+        throw new Error('Esta interfaz requiere el rol MESERO o COCINERO.')
+      }
       setAutorizacion(encabezado)
       setPerfil(datosPerfil)
-      setMesas(datosMesas)
-      setPlatos(datosPlatos)
       setClave('')
     } catch (fallo) {
       setError(fallo.message)
@@ -60,11 +153,13 @@ function App() {
   }
 
   function salir() {
+    pedidosGuard.current.select(null)
     setAutorizacion('')
     setPerfil(null)
     setMesaId('')
     setSesionId(null)
     setBorrador({})
+    setPedidosMesa([])
     setObservaciones('')
     setMensaje('')
     setError('')
@@ -73,10 +168,14 @@ function App() {
   function seleccionarMesa(valor) {
     setMesaId(valor)
     const mesa = mesas.find((candidata) => candidata.id === Number(valor))
-    setSesionId(mesa?.sesion_propia ? mesa.sesion_activa_id : null)
+    const sesionNueva = mesa?.sesion_propia ? mesa.sesion_activa_id : null
+    pedidosGuard.current.select(sesionNueva)
+    setSesionId(sesionNueva)
+    setPedidosMesa([])
     setBorrador({})
     setMensaje('')
     setError('')
+    if (sesionNueva !== null) void cargarPedidos(sesionNueva)
   }
 
   async function abrirSesion() {
@@ -86,7 +185,9 @@ function App() {
       const sesion = await api('sesiones', autorizacion, {
         method: 'POST', body: JSON.stringify({ mesa_id: Number(mesaId) }),
       })
+      pedidosGuard.current.select(sesion.id)
       setSesionId(sesion.id)
+      setPedidosMesa([])
       setMensaje(`Sesión ${sesion.id} abierta para la mesa seleccionada.`)
       try {
         setMesas(await api('mesas', autorizacion))
@@ -111,6 +212,7 @@ function App() {
   }
 
   async function enviarPedido() {
+    const sesionObjetivo = pedidosGuard.current.current()
     const items = Object.entries(borrador).map(([platoId, cantidad]) => ({
       plato_id: Number(platoId), cantidad,
     }))
@@ -123,11 +225,16 @@ function App() {
     try {
       const pedido = await api('pedidos', autorizacion, {
         method: 'POST',
-        body: JSON.stringify({ sesion_id: sesionId, observaciones, items }),
+        body: JSON.stringify({ sesion_id: sesionObjetivo, observaciones, items }),
       })
       setBorrador({})
       setObservaciones('')
-      setMensaje(`Pedido ${pedido.id} enviado a cocina: ${pedido.items.length} unidad(es) en cola.`)
+      setMensaje(`Pedido enviado a cocina: ${pedido.items.length} unidad(es) en cola. ID global ${pedido.id}.`)
+      const pedidosActualizados = await cargarPedidos(sesionObjetivo)
+      const numeroLocal = pedidosActualizados?.find((actual) => actual.id === pedido.id)?.numero_en_sesion
+      if (numeroLocal) {
+        setMensaje(`Pedido ${numeroLocal} enviado a cocina: ${pedido.items.length} unidad(es) en cola. ID global ${pedido.id}.`)
+      }
       try {
         setPlatos(await api('platos', autorizacion))
       } catch (fallo) {
@@ -140,16 +247,53 @@ function App() {
     }
   }
 
+  async function actualizarPedidos() {
+    const sesionObjetivo = pedidosGuard.current.current()
+    if (sesionObjetivo === null) return
+    setOcupado(true)
+    await cargarPedidos(sesionObjetivo)
+    setOcupado(false)
+  }
+
+  async function cancelarItem(itemId, sesionDeLaLista) {
+    if (pedidosGuard.current.current() !== sesionDeLaLista ||
+        !pedidosMesa.some((pedido) => pedido.items.some((item) => item.id === itemId && item.estado === 'EN_COLA'))) {
+      return
+    }
+    pedidosGuard.current.invalidate()
+    setOcupado(true)
+    setError('')
+    setMensaje('')
+    let falloOperacion = null
+    try {
+      await api(`items/${itemId}/cancelar`, autorizacion, { method: 'POST' })
+      setMensaje(`Unidad ${itemId} cancelada; ingredientes devueltos.`)
+    } catch (fallo) {
+      falloOperacion = fallo
+    } finally {
+      if (pedidosGuard.current.current() === sesionDeLaLista) {
+        await cargarPedidos(sesionDeLaLista)
+        try {
+          setPlatos(await api('platos', autorizacion))
+        } catch (fallo) {
+          setError(`No se pudo actualizar el catálogo: ${fallo.message}`)
+        }
+        if (falloOperacion) setError(falloOperacion.message)
+      }
+      setOcupado(false)
+    }
+  }
+
   const mesaSeleccionada = mesas.find((mesa) => mesa.id === Number(mesaId))
   const totalUnidades = Object.values(borrador).reduce((total, cantidad) => total + cantidad, 0)
 
   return (
     <main className="page">
       <h1>Sala Fogón</h1>
-      <p>Sesiones de mesa y envío de pedidos a cocina</p>
+      <p>Sesiones de mesa, pedidos y cocina</p>
       {!perfil ? (
         <form className="panel" onSubmit={ingresar}>
-          <h2>Acceso de mesero</h2>
+          <h2>Acceso del personal</h2>
           <label>Usuario <input autoComplete="username" value={usuario} onChange={(e) => setUsuario(e.target.value)} required /></label>
           <label>Contraseña <input type="password" autoComplete="current-password" value={clave} onChange={(e) => setClave(e.target.value)} required /></label>
           <button disabled={ocupado}>Ingresar</button>
@@ -157,7 +301,8 @@ function App() {
         </form>
       ) : (
         <>
-          <div className="cabecera"><strong>Mesero: {perfil.nombre}</strong><button type="button" disabled={ocupado} onClick={salir}>Salir</button></div>
+          <div className="cabecera"><strong>{perfil.rol === 'COCINERO' ? 'Cocinero' : 'Mesero'}: {perfil.nombre}</strong><button type="button" disabled={ocupado} onClick={salir}>Salir</button></div>
+          {perfil.rol === 'COCINERO' ? <Cocina autorizacion={autorizacion} /> : <>
           <section className="panel">
             <h2>Mesa</h2>
             <label>Seleccionar mesa
@@ -191,6 +336,19 @@ function App() {
               <label>Observaciones <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} /></label>
               <button type="button" disabled={ocupado || totalUnidades === 0} onClick={enviarPedido}>Enviar a cocina</button>
             </section>
+            <section className="panel">
+              <div className="cabecera"><h2>Pedidos de esta sesión</h2><button type="button" disabled={ocupado} onClick={actualizarPedidos}>Actualizar</button></div>
+              {pedidosMesa.length === 0 && <p>Aún no hay pedidos en esta sesión.</p>}
+              {pedidosMesa.map((pedido) => <article className="pedido" key={pedido.id}>
+                <div className="cabecera pedido-cabecera"><h3>Pedido {pedido.numero_en_sesion}</h3><small>ID global {pedido.id}</small></div>
+                <p>Estado general: <strong>{etiquetasPedido[pedido.estado_general] || 'Sin ítems'}</strong></p>
+                <ul className="lista-items">{pedido.items.map((item) => <li key={item.id}>
+                  <span>Unidad {item.id}: {item.plato} — {item.estado}</span>
+                  {item.estado === 'EN_COLA' && <button type="button" disabled={ocupado} onClick={() => cancelarItem(item.id, sesionId)}>Cancelar unidad</button>}
+                </li>)}</ul>
+              </article>)}
+            </section>
+          </>}
           </>}
         </>
       )}

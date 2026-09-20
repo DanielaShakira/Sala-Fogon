@@ -1,6 +1,6 @@
 # Sala Fogón
 
-Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene Django REST Framework, React/Vite, PostgreSQL y el modelo relacional. El primer flujo permite a un mesero abrir una sesión de mesa, consultar el catálogo y enviar pedidos a cocina.
+Sistema de gestión de pedidos y cocina para la prueba técnica Sistema E. El repositorio contiene Django REST Framework, React/Vite, PostgreSQL y el modelo relacional. El mesero puede abrir sesiones, consultar el catálogo, enviar pedidos y cancelar unidades en cola; el cocinero puede consultar la cola y avanzar cada unidad hasta `LISTO`.
 
 ## Requisitos
 
@@ -75,6 +75,8 @@ cd frontend
 npm run build
 ```
 
+Para comprobar la protección que descarta respuestas antiguas al cambiar de sesión o actualizar pedidos, ejecuta `npm test` dentro de `frontend/`. Utiliza el runner incluido en Node.js; no instala dependencias adicionales.
+
 ## Organización
 
 - `backend/config/`: configuración Django y comprobación de salud de la API.
@@ -88,9 +90,9 @@ npm run build
 
 Los precios usan `DecimalField(max_digits=12, decimal_places=2)`, para conservar centavos sin errores de coma flotante. Las cantidades abstractas de ingredientes usan `DecimalField(max_digits=12, decimal_places=3)`, que permite milésimas de porción. Esto admite precios de hasta 9.999.999.999,99 y cantidades de hasta 999.999.999,999 por registro. El backend rechaza valores negativos mediante restricciones de base de datos; las recetas y composiciones comprometidas requieren cantidades mayores que cero.
 
-La base limita a una sesión activa por mesa con una unicidad condicionada a `fecha_hora_fin IS NULL`. También garantiza una cuenta por sesión, una asignación de pago por ítem y la unicidad de ingredientes en cada receta o composición de ítem. Los estados de `Sesion`, `Pedido` y `Cuenta` no se almacenan. La apertura y el envío de pedidos validan en el backend el rol y las reglas entre registros. Las transiciones de cocina, cancelaciones y pagos continúan pendientes.
+La base limita a una sesión activa por mesa con una unicidad condicionada a `fecha_hora_fin IS NULL`. También garantiza una cuenta por sesión, una asignación de pago por ítem y la unicidad de ingredientes en cada receta o composición de ítem. Los estados de `Sesion`, `Pedido` y `Cuenta` no se almacenan. Las operaciones de mesero y cocina validan el rol en el backend; las transiciones y la devolución de ingredientes se ejecutan en transacciones. La división de cuentas y los pagos continúan pendientes.
 
-Para ejecutar las pruebas estructurales sobre `test_sala_fogon`, desde la raíz del repositorio:
+Para ejecutar las pruebas estructurales y funcionales sobre `test_sala_fogon`, desde la raíz del repositorio:
 
 ```powershell
 backend\.venv\Scripts\python.exe backend\manage.py test restaurant --keepdb --noinput
@@ -98,7 +100,7 @@ backend\.venv\Scripts\python.exe backend\manage.py test restaurant --keepdb --no
 
 Antes de ejecutarlas, comprueba que `test_sala_fogon` existe, está vacía la primera vez y pertenece a `sala_fogon_app`. El comando no usa la base principal `sala_fogon` para los datos de prueba y conserva la base de pruebas al terminar.
 
-## Datos iniciales y primer flujo
+## Datos iniciales y flujo del mesero
 
 El sistema no crea mesas, platos, ingredientes ni cuentas de personal automáticamente. Para probarlo desde cero, crea primero un administrador local con `backend\.venv\Scripts\python.exe backend\manage.py createsuperuser` y entra a <http://127.0.0.1:8000/admin/>. En la administración de Django:
 
@@ -118,6 +120,24 @@ Los endpoints de este flujo son:
 | `GET /api/platos/` | Listar platos y disponibilidad calculada desde estado, receta y existencias. |
 | `POST /api/pedidos/` | Enviar `{"sesion_id": 1, "observaciones": "", "items": [{"plato_id": 1, "cantidad": 2}]}`. Cada unidad crea un `ItemPedido` en `EN_COLA`. |
 
-Las rutas del flujo requieren HTTP Basic y el rol `MESERO`. Las cantidades de `items` deben ser números enteros JSON mayores que cero y el arreglo no puede estar vacío. Los pedidos solo pueden enviarse a una sesión activa del mesero autenticado. No se ha implementado todavía la consulta de la cola de cocina, el avance o cancelación de ítems ni los pagos.
+Las rutas anteriores, salvo `/api/me/`, requieren HTTP Basic y el rol `MESERO`. Las cantidades de `items` deben ser números enteros JSON mayores que cero y el arreglo no puede estar vacío. Los pedidos solo pueden enviarse a una sesión activa del mesero autenticado.
 
-La prueba `restaurant` usa explícitamente `test_sala_fogon` y reutiliza esa base con `--keepdb`; no escribe datos de prueba en `sala_fogon`. Aún quedan pendientes pruebas automatizadas de navegador y de aperturas o pedidos realmente concurrentes con conexiones independientes.
+## Cocina y cancelaciones
+
+En Django Admin crea una cuenta de acceso normal activa y un perfil `Usuario` vinculado con rol `COCINERO`; no necesita `is_staff`. En React, entra con sus credenciales. La cola muestra los pedidos pendientes de más antiguos a más recientes, agrupados por pedido y con su mesa, observaciones e ítems en `EN_COLA` o `EN_PREPARACION`. Pulsa **Iniciar** en una unidad en cola y después **Marcar listo**. La vista se actualiza tras cada operación; **Actualizar** consulta también cambios hechos desde otra pestaña. No hay actualización en tiempo real ni WebSockets.
+
+El mesero ve todos los pedidos de la sesión seleccionada, incluidos los completados y cancelados. Se muestran como **Pedido 1**, **Pedido 2**, etc., según fecha de creación e ID dentro de esa sesión; el ID global permanece pequeño a la derecha para identificar el registro real. Puede pulsar **Actualizar** y cancelar una unidad que aún aparezca en `EN_COLA`. Al cambiar de mesa se vacía la lista anterior y se ignoran las respuestas de consultas antiguas. El backend vuelve a comprobar el estado: si cocina la inició entretanto, rechaza la cancelación con HTTP 409. Una cancelación aceptada conserva el ítem en `CANCELADO` y devuelve las cantidades registradas en su composición histórica, incluso si la receta actual del plato ha cambiado. Una segunda cancelación devuelve HTTP 409 y no repite la devolución.
+
+El estado general se **calcula al consultar**, sin columna adicional en `Pedido`: `CANCELADO` si todos los ítems están cancelados, `COMPLETO` si todos los no cancelados están listos, `EN_COLA` si todos los no cancelados siguen en cola y `EN_CURSO` para los demás avances parciales. Mesero y cocina muestran ese resumen junto con los estados individuales. Cocina conserva el ID global y solo muestra pedidos con ítems `EN_COLA` o `EN_PREPARACION`; por eso un pedido completamente listo o cancelado desaparece de su cola, pero sigue visible en la lista de su sesión para el mesero.
+
+| Método y ruta | Rol | Función |
+| --- | --- | --- |
+| `GET /api/sesiones/<id>/pedidos/` | `MESERO` propietario | Listar todos los pedidos e ítems de su sesión, con `numero_en_sesion` y `estado_general` calculados. |
+| `GET /api/cocina/cola/` | `COCINERO` | Consultar la cola pendiente agrupada por pedido. |
+| `POST /api/items/<id>/iniciar/` | `COCINERO` | Pasar de `EN_COLA` a `EN_PREPARACION`. |
+| `POST /api/items/<id>/listo/` | `COCINERO` | Pasar de `EN_PREPARACION` a `LISTO`. |
+| `POST /api/items/<id>/cancelar/` | `MESERO` propietario | Pasar de `EN_COLA` a `CANCELADO` y devolver ingredientes. |
+
+Las tres operaciones de cambio de estado bloquean la misma fila de `ItemPedido` antes de validar el estado vigente; cancelar también bloquea los ingredientes antes de devolverlos. `Pedido` no guarda un estado ni existe una tabla para la cola. La cuenta y los pagos todavía no tienen flujo operativo.
+
+La prueba `restaurant` usa explícitamente `test_sala_fogon` y reutiliza esa base con `--keepdb`; no escribe datos de prueba en `sala_fogon`. Dos pruebas de carrera lanzan cancelación frente a inicio de preparación y dos cancelaciones a la vez, respectivamente. Verifican procesos PostgreSQL distintos, una sola operación aceptada y existencias finales correctas; no miden cuánto tiempo espera una solicitud en el bloqueo. Aún quedan pendientes pruebas automatizadas de navegador y de aperturas o envíos de pedidos concurrentes.
