@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from './api.js'
 import { createLatestRequestGuard } from './latestRequest.js'
 import { createSingleFlight, INTERVALO_CONFIGURACION, useAutoRefresh } from './autoRefresh.js'
+import { compactDecimal, formatPrice, formatQuantity } from './money.js'
 
 function Mesas({ mesas, ocupado, operar, autorizacion }) {
   const [numero, setNumero] = useState('')
@@ -26,12 +27,13 @@ function Mesas({ mesas, ocupado, operar, autorizacion }) {
 }
 
 function IngredienteFila({ ingrediente, ocupado, operar, autorizacion }) {
-  const [cantidadNueva, setCantidadNueva] = useState(ingrediente.cantidad_disponible)
-  const cantidadAnterior = useRef(ingrediente.cantidad_disponible)
+  const [cantidadNueva, setCantidadNueva] = useState(compactDecimal(ingrediente.cantidad_disponible))
+  const cantidadAnterior = useRef(compactDecimal(ingrediente.cantidad_disponible))
   useEffect(() => {
+    const siguiente = compactDecimal(ingrediente.cantidad_disponible)
     setCantidadNueva((actual) => actual === cantidadAnterior.current
-      ? ingrediente.cantidad_disponible : actual)
-    cantidadAnterior.current = ingrediente.cantidad_disponible
+      ? siguiente : actual)
+    cantidadAnterior.current = siguiente
   }, [ingrediente.cantidad_disponible])
 
   async function ajustar(evento) {
@@ -52,7 +54,7 @@ function IngredienteFila({ ingrediente, ocupado, operar, autorizacion }) {
 
   return <li className="config-fila">
     <div><strong>{ingrediente.nombre}</strong> <small>#{ingrediente.id}</small><br />
-      {ingrediente.activo ? 'Activo' : 'Inactivo'} · Existencia: {ingrediente.cantidad_disponible}</div>
+      {ingrediente.activo ? 'Activo' : 'Inactivo'} · Existencia: {formatQuantity(ingrediente.cantidad_disponible)}</div>
     <div className="config-acciones">
       <form className="formulario-en-linea" onSubmit={ajustar}>
         <label>Nueva existencia total
@@ -67,7 +69,7 @@ function IngredienteFila({ ingrediente, ocupado, operar, autorizacion }) {
 
 function Ingredientes({ ingredientes, ocupado, operar, autorizacion }) {
   const [nombre, setNombre] = useState('')
-  const [cantidad, setCantidad] = useState('0.000')
+  const [cantidad, setCantidad] = useState('0')
 
   async function crear(evento) {
     evento.preventDefault()
@@ -76,7 +78,7 @@ function Ingredientes({ ingredientes, ocupado, operar, autorizacion }) {
     }), 'Ingrediente creado.')
     if (correcto) {
       setNombre('')
-      setCantidad('0.000')
+      setCantidad('0')
     }
   }
 
@@ -113,11 +115,11 @@ function Platos({ platos, ingredientes, ocupado, operar, autorizacion }) {
   function editar(plato) {
     setEditando(plato.id)
     setNombre(plato.nombre)
-    setPrecio(plato.precio)
+    setPrecio(compactDecimal(plato.precio))
     setActivo(plato.activo)
     setComposicion(plato.composicion.map((fila) => ({
       ingrediente_id: String(fila.ingrediente_id),
-      cantidad_requerida: fila.cantidad_requerida,
+      cantidad_requerida: compactDecimal(fila.cantidad_requerida),
     })))
   }
 
@@ -149,9 +151,9 @@ function Platos({ platos, ingredientes, ocupado, operar, autorizacion }) {
     <div className="cabecera"><h2>Platos y recetas</h2><button type="button" disabled={ocupado} onClick={nuevo}>Nuevo plato</button></div>
     {platos.length === 0 && <p>No hay platos registrados.</p>}
     <ul className="lista-items">{platos.map((plato) => <li key={plato.id}>
-      <span><strong>{plato.nombre}</strong> · ${plato.precio} · {plato.activo ? 'Activo' : 'Inactivo'} · {plato.disponible ? 'Disponible' : 'No disponible'}<br />
+      <span><strong>{plato.nombre}</strong> · {formatPrice(plato.precio)} · {plato.activo ? 'Activo' : 'Inactivo'} · {plato.disponible ? 'Disponible' : 'No disponible'}<br />
         <small>Receta: {plato.composicion.length ? plato.composicion.map((fila) =>
-          `${nombres[fila.ingrediente_id] || `Ingrediente #${fila.ingrediente_id}`} (${fila.cantidad_requerida})`
+          `${nombres[fila.ingrediente_id] || `Ingrediente #${fila.ingrediente_id}`} (${formatQuantity(fila.cantidad_requerida)})`
         ).join(', ') : 'sin ingredientes requeridos'}</small>
       </span>
       <button type="button" disabled={ocupado} onClick={() => editar(plato)}>Editar</button>
@@ -161,7 +163,7 @@ function Platos({ platos, ingredientes, ocupado, operar, autorizacion }) {
       <label>Nombre <input required maxLength={150} value={nombre} onChange={(e) => setNombre(e.target.value)} /></label>
       <label>Precio <input type="number" min="0" step="0.01" required value={precio} onChange={(e) => setPrecio(e.target.value)} /></label>
       <label className="casilla"><input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} /> Plato activo</label>
-      <div className="cabecera"><h3>Ingredientes por unidad</h3><button type="button" disabled={ocupado || ingredientes.length === 0} onClick={() => setComposicion((actual) => [...actual, { ingrediente_id: '', cantidad_requerida: '1.000' }])}>Añadir ingrediente</button></div>
+      <div className="cabecera"><h3>Ingredientes por unidad</h3><button type="button" disabled={ocupado || ingredientes.length === 0} onClick={() => setComposicion((actual) => [...actual, { ingrediente_id: '', cantidad_requerida: '1' }])}>Añadir ingrediente</button></div>
       {composicion.map((fila, indice) => <div className="fila-receta" key={indice}>
         <label>Ingrediente <select required value={fila.ingrediente_id} onChange={(e) => cambiarFila(indice, 'ingrediente_id', e.target.value)}>
           <option value="">Selecciona</option>

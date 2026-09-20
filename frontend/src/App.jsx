@@ -6,6 +6,7 @@ import Cuenta from './Cuenta.jsx'
 import Administracion from './Administracion.jsx'
 import { etiquetaEstado } from './etiquetas.js'
 import { createReadyTracker, mensajeItemsListos } from './readyNotifications.js'
+import { formatPrice } from './money.js'
 import AvisoGlobal from './AvisoGlobal.jsx'
 import './App.css'
 
@@ -452,7 +453,7 @@ function App() {
               {platos.length === 0 && <div className="empty-state"><strong>Sin platos registrados</strong><p>El administrador puede añadir platos desde Configuración.</p></div>}
               <ul className="platos">
                 {platos.map((plato) => <li key={plato.id}>
-                  <div className="dish-info"><strong>{plato.nombre}</strong><span className="dish-price">${plato.precio}</span><span className={`availability${plato.disponible ? ' is-available' : ' is-unavailable'}`}>{plato.disponible ? 'Disponible' : 'No disponible'}</span></div>
+                  <div className="dish-info"><strong>{plato.nombre}</strong><span className="dish-price">{formatPrice(plato.precio)}</span><span className={`availability${plato.disponible ? ' is-available' : ' is-unavailable'}`}>{plato.disponible ? 'Disponible' : 'No disponible'}</span></div>
                   <div className="controles" aria-label={`Unidades de ${plato.nombre}`}>
                     <button className="stepper-button" type="button" aria-label={`Quitar ${plato.nombre}`} disabled={ocupado || !borrador[plato.id]} onClick={() => cambiarCantidad(plato.id, -1)}>−</button>
                     <output>{borrador[plato.id] || 0}</output>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createLatestRequestGuard } from './latestRequest.js'
 import { createSingleFlight, INTERVALO_OPERATIVO, useAutoRefresh } from './autoRefresh.js'
 import { api } from './api.js'
-import { formatCents, toCents } from './money.js'
+import { formatCents, formatPrice, toCents } from './money.js'
 import { etiquetaEstado } from './etiquetas.js'
 
 export default function Cuenta({ sesionId, autorizacion, revision, alCerrar, avisar }) {
@@ -77,7 +77,7 @@ export default function Cuenta({ sesionId, autorizacion, revision, alCerrar, avi
       })
       if (guard.current.current() === sesionId) {
         setSeleccionados([])
-        reportarExito(`Pago ${pago.id} registrado por $${pago.total}.`)
+        reportarExito(`Pago ${pago.id} registrado por ${formatPrice(pago.total)}.`)
       }
     } catch (fallo) {
       falloOperacion = fallo
@@ -122,9 +122,9 @@ export default function Cuenta({ sesionId, autorizacion, revision, alCerrar, avi
     {!cuenta && !error && <p className="nota">Cargando cuenta...</p>}
     {cuenta && <>
       <div className="account-summary" aria-label="Resumen de la cuenta">
-        <div className="stat"><small>Consumo</small><strong>${cuenta.total_consumo}</strong></div>
-        <div className="stat"><small>Pagado</small><strong>${cuenta.total_pagado}</strong></div>
-        <div className="stat stat-pending"><small>Pendiente</small><strong>${cuenta.total_pendiente}</strong></div>
+        <div className="stat"><small>Consumo</small><strong>{formatPrice(cuenta.total_consumo)}</strong></div>
+        <div className="stat"><small>Pagado</small><strong>{formatPrice(cuenta.total_pagado)}</strong></div>
+        <div className="stat stat-pending"><small>Pendiente</small><strong>{formatPrice(cuenta.total_pendiente)}</strong></div>
       </div>
       <div className="account-status">
         <span className="eyebrow">Estado de la cuenta</span>
@@ -139,7 +139,7 @@ export default function Cuenta({ sesionId, autorizacion, revision, alCerrar, avi
         <div className="order-card-header"><div><span className="eyebrow">Consumo registrado</span><h3>Pedido {pedido.numero_en_sesion}</h3></div><small>ID global #{pedido.id}</small></div>
         <ul className="item-list">{pedido.items.map((item) => <li className="account-item" key={item.id}>
           <div className="account-item-main"><strong>{item.plato}</strong><small>{item.estado === 'CANCELADO' ? 'No facturable' : item.pago_id ? `Pagado en el pago ${item.pago_id}` : 'Pendiente de pago'}</small><span className="estado" data-estado={item.estado}>{etiquetaEstado(item.estado)}</span></div>
-          <div className="account-item-side"><strong className="amount">${item.precio_unitario}</strong>
+          <div className="account-item-side"><strong className="amount">{formatPrice(item.precio_unitario)}</strong>
             {item.facturable && !item.pago_id && <label className="seleccion-pago"><input type="checkbox" checked={seleccionados.includes(item.id)} disabled={ocupado || !cuenta.pago_habilitado} onChange={() => alternar(item.id)} aria-label={`Incluir ${item.plato}, ítem ${item.id}, del pedido ${pedido.numero_en_sesion} en el pago`} /><span aria-hidden="true">Incluir</span></label>}
           </div>
         </li>)}</ul>
@@ -151,7 +151,7 @@ export default function Cuenta({ sesionId, autorizacion, revision, alCerrar, avi
           <div className="payment-actions"><button className="button button-primary" type="button" disabled={ocupado || !cuenta.pago_habilitado || seleccionados.length === 0} onClick={registrar}>Registrar pago</button></div>
         </div>
         <div className="payments-history"><h3>Pagos registrados</h3>
-          {cuenta.pagos.length === 0 ? <p className="nota">Aún no hay pagos.</p> : <ul>{cuenta.pagos.map((pago) => <li key={pago.id}><div className="payment-record"><strong>Pago {pago.id}</strong><strong className="amount">${pago.total}</strong></div><small>{pago.items.map((item) => item.plato).join(', ')}</small></li>)}</ul>}
+          {cuenta.pagos.length === 0 ? <p className="nota">Aún no hay pagos.</p> : <ul>{cuenta.pagos.map((pago) => <li key={pago.id}><div className="payment-record"><strong>Pago {pago.id}</strong><strong className="amount">{formatPrice(pago.total)}</strong></div><small>{pago.items.map((item) => item.plato).join(', ')}</small></li>)}</ul>}
         </div>
       </div>
       <div className="session-close"><div><span className="eyebrow">Finalizar atención</span><h3>Cerrar sesión</h3><p>{cuenta.item_ids_pendientes.length > 0 ? 'Para cerrar, asigna todas las unidades no canceladas a pagos.' : 'La cuenta está cubierta. La mesa quedará disponible para una nueva atención.'}</p></div>
